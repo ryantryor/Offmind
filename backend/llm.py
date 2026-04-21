@@ -20,7 +20,7 @@ import urllib.error
 
 
 LLM_BASE_URL = os.environ.get("OFFMIND_LLM_BASE_URL", "http://ollama:11434/v1")
-LLM_MODEL = os.environ.get("OFFMIND_LLM_MODEL", "qwen2.5:3b")
+LLM_MODEL = os.environ.get("OFFMIND_LLM_MODEL", "llama3.2:3b")
 LLM_API_KEY = os.environ.get("OFFMIND_LLM_API_KEY", "ollama")  # ollama ignores it
 LLM_TIMEOUT = int(os.environ.get("OFFMIND_LLM_TIMEOUT", "120"))
 

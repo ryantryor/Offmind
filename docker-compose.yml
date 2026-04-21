@@ -27,7 +27,7 @@ services:
       OFFMIND_MODEL_DIR: /app/model
       # OpenAI-compatible LLM for /api/ask. Defaults to the ollama service.
       OFFMIND_LLM_BASE_URL: http://ollama:11434/v1
-      OFFMIND_LLM_MODEL: qwen2.5:3b
+      OFFMIND_LLM_MODEL: llama3.2:3b
       OFFMIND_LLM_API_KEY: ollama
     volumes:
       - ./data/sample:/app/data/sample:ro
@@ -42,8 +42,10 @@ services:
     restart: unless-stopped
 
   # Local LLM for /api/ask — OpenAI-compatible API at :11434/v1
-  # First run: `docker exec -it offmind-ollama ollama pull qwen2.5:3b`
-  # (Qwen2.5 speaks both English and Chinese natively — matches our dataset.)
+  # First run: `docker exec -it offmind-ollama ollama pull llama3.2:3b`
+  # (Llama 3.2 3B: English-native, strong instruction following — perfect for
+  #  citation-style RAG. The multilingual MiniLM embedding still lets English
+  #  queries hit Chinese journal entries; the LLM just narrates in English.)
   ollama:
     image: ollama/ollama:latest
     container_name: offmind-ollama

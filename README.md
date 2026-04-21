@@ -4,11 +4,11 @@
 
 ### *Talk with your past time.*
 
-A private time machine for your mind — drop in your journals, notes, PDFs and chat logs, then ask your past self anything. **100% offline.** Powered by [Actian VectorAI DB](https://github.com/hackmamba-io/actian-vectorAI-db-beta).
+A private time machine for your mind — drop in your journals, notes, PDFs and chat logs, then ask your past self anything. **English-first, 100% offline,** with multilingual retrieval under the hood (your English question can pull a Chinese journal entry from 2023). Powered by [Actian VectorAI DB](https://github.com/hackmamba-io/actian-vectorAI-db-beta).
 
 [English](#english) · [中文](#中文)
 
-![status](https://img.shields.io/badge/status-hackathon-FFB400) ![offline](https://img.shields.io/badge/offline-100%25-6B4FBB) ![actian](https://img.shields.io/badge/built%20on-Actian%20VectorAI%20DB-1A1A1F) ![bilingual](https://img.shields.io/badge/bilingual-EN%20·%20中文-F8B739)
+![status](https://img.shields.io/badge/status-hackathon-FFB400) ![offline](https://img.shields.io/badge/offline-100%25-6B4FBB) ![actian](https://img.shields.io/badge/built%20on-Actian%20VectorAI%20DB-1A1A1F) ![english-first](https://img.shields.io/badge/English--first-multilingual%20retrieval-F8B739)
 
 </div>
 
@@ -18,9 +18,11 @@ A private time machine for your mind — drop in your journals, notes, PDFs and 
 
 ### What is OffMind?
 
-Most of what you know about yourself lives in scattered text — journal entries, notes, half-finished drafts, chat logs with yourself at 2am. OffMind takes all of that and turns it into a **conversational time machine**: you ask a question in English or Chinese, and your *past self* answers, quoting the exact words you wrote.
+Most of what you know about yourself lives in scattered text — journal entries, notes, half-finished drafts, chat logs with yourself at 2am. OffMind takes all of that and turns it into a **conversational time machine**: you ask a question in plain English, and your *past self* answers, quoting the exact words you wrote — even if some of those words happened to be in Chinese.
 
 Everything runs on your laptop. No cloud. No telemetry. The text, the embeddings, the LLM — all local.
+
+> **Why "multilingual under the hood"?** The narration LLM (Llama 3.2 3B) is English-first. But the retrieval layer uses a 384-d multilingual embedding (`paraphrase-multilingual-MiniLM-L12-v2`, 50+ languages) — so an English question like *"what was I anxious about last spring?"* can surface a Chinese journal entry from 2023 alongside English ones. The LLM then narrates the synthesis in English with `[n]` citations back to the originals. Real bilingual users don't think in one language — neither should their tooling.
 
 ### Three things you can do with it
 
@@ -64,7 +66,7 @@ Plus: **multilingual embeddings** (paraphrase-multilingual-MiniLM-L12-v2, 384-d,
                        ┌──────────────────────────────┐
                        │  Local LLM (optional)        │
                        │  Ollama / any OpenAI-compat  │
-                       │  qwen2.5:3b default          │
+                       │  llama3.2:3b default          │
                        │  Without it: /api/ask still  │
                        │  returns retrieved sources   │
                        └──────────────────────────────┘
@@ -78,7 +80,7 @@ cd Offmind
 docker compose up -d --build
 
 # One-time: pull the local LLM used by /api/ask (~2 GB)
-docker exec -it offmind-ollama ollama pull qwen2.5:3b
+docker exec -it offmind-ollama ollama pull llama3.2:3b
 
 # Open http://localhost:3000
 #   → click "Load sample dataset" (30 bilingual journal entries)
@@ -146,9 +148,11 @@ offmind/
 
 ### OffMind 是什么?
 
-你对自己的了解,大部分都散落在文字里 —— 日记、笔记、没写完的草稿、凌晨两点和自己的聊天记录。OffMind 把这一切变成一台**可以对话的时光机**: 你用中文或英文问一句,**过去的你**会用自己当时写下的原话来回答。
+你对自己的了解,大部分都散落在文字里 —— 日记、笔记、没写完的草稿、凌晨两点和自己的聊天记录。OffMind 把这一切变成一台**可以对话的时光机**: 用英文问一句,**过去的你**就会用自己当时写下的原话来回答 —— 哪怕其中一些原话当初是用中文写的。
 
 全部在你的电脑上运行。没有云,没有埋点。文本、向量、大模型 —— 全是本地的。
+
+> **"底层多语言"是什么意思?** 用来生成回答的本地大模型 (Llama 3.2 3B) 是英文 first;但检索层用的是 384 维多语言嵌入(`paraphrase-multilingual-MiniLM-L12-v2`,50+ 语种)。所以一句英文问题 —— *"what was I anxious about last spring?"* —— 可以同时命中 2023 年用中文写的日记和英文日记,大模型再用英文把它们综合在一起,给出 `[n]` 引用回原文。真实的双语用户不会只用一种语言思考,工具也不该。
 
 ### 三种玩法
 
@@ -185,7 +189,7 @@ cd Offmind
 docker compose up -d --build
 
 # 首次使用: 拉取本地大模型(/api/ask 使用)
-docker exec -it offmind-ollama ollama pull qwen2.5:3b
+docker exec -it offmind-ollama ollama pull llama3.2:3b
 
 # 打开 http://localhost:3000
 #   → 点 "载入示例数据集" (30 条双语日记)
