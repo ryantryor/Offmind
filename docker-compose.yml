@@ -60,6 +60,9 @@ services:
       context: ./frontend
       args:
         NPM_REGISTRY: https://registry.npmmirror.com
+        # Baked into .next at build time — next.config.js's rewrite destination
+        # is evaluated during `next build`, not at runtime.
+        NEXT_PUBLIC_API_URL: http://backend:8000
     container_name: offmind-frontend
     environment:
       # The frontend container talks to backend by service name
