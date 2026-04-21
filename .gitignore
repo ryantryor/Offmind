@@ -15,6 +15,8 @@ data/vectorai/
 data/uploads/
 data/model-cache/
 data/ollama/
+# Keep the journal directory itself (.gitkeep) but ignore real entries
+data/journal/*.md
 
 # Model weights — 470 MB, fetched by models/_download.py
 models/paraphrase-multilingual-MiniLM-L12-v2/pytorch_model.bin

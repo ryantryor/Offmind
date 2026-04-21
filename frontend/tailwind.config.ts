@@ -25,6 +25,10 @@ const config: Config = {
       fontFamily: {
         sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'sans-serif'],
         display: ['Inter', 'sans-serif'],
+        // Warm, expressive serif for journal bodies + hero + answer text.
+        // Falls through to system serifs if Fraunces can't load (restricted
+        // networks) — still readable, still serif, still "journal-ish".
+        serif: ['Fraunces', 'Georgia', '"Times New Roman"', '"Noto Serif SC"', 'serif'],
         mono: ['JetBrains Mono', 'SF Mono', 'Menlo', 'monospace'],
       },
       boxShadow: {

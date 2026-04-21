@@ -32,6 +32,8 @@ services:
     volumes:
       - ./data/sample:/app/data/sample:ro
       - ./data/uploads:/app/data/uploads
+      # Journal entries written from the Write tab — persists across restarts
+      - ./data/journal:/app/data/journal
       - ./data/model-cache:/root/.cache
       # Pre-downloaded embedding model (bilingual, 384d)
       - ./models/paraphrase-multilingual-MiniLM-L12-v2:/app/model:ro

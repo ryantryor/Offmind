@@ -15,6 +15,26 @@ export const STR = {
     tabAsk: 'Ask',
     tabTimeline: 'Timeline',
     tabSearch: 'Search',
+    tabWrite: 'Write',
+
+    // Write view
+    writeTitle: 'Write to your future self',
+    writeSub: 'A new page in your private notebook. It becomes searchable the second you save.',
+    writeTitlePlaceholder: 'Give this moment a title…',
+    writeBodyPlaceholder: 'What happened today? What were you thinking? Write freely — your future self is a good listener.',
+    writeMoodLabel: 'How does this feel?',
+    writeTagsLabel: 'Tags',
+    writeTagsPlaceholder: 'comma, separated, tags',
+    writeSave: 'Save to memory',
+    writeSaving: 'Saving…',
+    writeSaved: 'Saved. Now searchable.',
+    writeRelated: 'Related memories',
+    writeRelatedEmpty: 'Start typing — your past self will chime in with anything that rhymes.',
+    writeRelatedHint: 'These are real entries from your past that semantically match what you\'re writing.',
+    writeCharCount: 'characters',
+    writeMoodPositive: 'Good',
+    writeMoodNeutral: 'Plain',
+    writeMoodNegative: 'Heavy',
 
     // Ask view
     askPlaceholder: 'Ask your past self anything…',
@@ -105,6 +125,26 @@ export const STR = {
     tabAsk: '问过去的我',
     tabTimeline: '时间线',
     tabSearch: '搜索',
+    tabWrite: '写下来',
+
+    // Write view
+    writeTitle: '写给未来的自己',
+    writeSub: '在你私人笔记本里翻开新的一页。保存的那一刻,它就可以被检索了。',
+    writeTitlePlaceholder: '给这个瞬间起个标题…',
+    writeBodyPlaceholder: '今天发生了什么?你在想什么?随便写。未来的你是一个很好的倾听者。',
+    writeMoodLabel: '此刻的心情',
+    writeTagsLabel: '标签',
+    writeTagsPlaceholder: '用逗号分隔多个标签',
+    writeSave: '存入记忆',
+    writeSaving: '保存中…',
+    writeSaved: '已保存。现在可以搜到了。',
+    writeRelated: '相关的记忆',
+    writeRelatedEmpty: '开始打字 — 过去的自己会从记忆深处跳出来和你呼应。',
+    writeRelatedHint: '这些是过去你写过的片段,语义上和你现在写的接近。',
+    writeCharCount: '字',
+    writeMoodPositive: '好',
+    writeMoodNeutral: '平',
+    writeMoodNegative: '重',
 
     // Ask view
     askPlaceholder: '问问过去的自己,任何事…',

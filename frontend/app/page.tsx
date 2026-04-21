@@ -6,6 +6,7 @@ import {
   Search, Upload, Sparkles, Database, Cpu, Zap, FileText,
   ArrowRight, Languages, ShieldCheck, Activity, Layers, X, Check, Loader2,
   MessageCircleQuestion, Clock, Smile, Meh, Frown, BookOpen, Send,
+  PenLine, Save, Tag as TagIcon,
 } from 'lucide-react';
 import {
   api,
@@ -17,7 +18,7 @@ import { STR, type Lang } from '@/lib/i18n';
 const MODES = ['hybrid', 'rrf', 'dbsf', 'title', 'body', 'sparse'] as const;
 type Mode = (typeof MODES)[number];
 
-type Tab = 'ask' | 'timeline' | 'search';
+type Tab = 'ask' | 'timeline' | 'search' | 'write';
 
 export default function Page() {
   const [lang, setLang] = useState<Lang>('en');
@@ -88,9 +89,9 @@ export default function Page() {
               <ShieldCheck className="w-3.5 h-3.5" />
               {lang === 'en' ? '100% offline · zero telemetry' : '100% 离线 · 零数据上传'}
             </motion.div>
-            <h1 className="font-display text-5xl md:text-6xl font-extrabold leading-[1.05] tracking-tight">
+            <h1 className="font-serif text-5xl md:text-6xl font-extrabold leading-[1.02] tracking-tight">
               {t.heroH1a}<br/>
-              <span className="text-violet">{t.heroH1b}</span>
+              <span className="text-violet italic">{t.heroH1b}</span>
             </h1>
             <p className="mt-5 text-lg text-muted max-w-xl leading-relaxed">{t.heroSub}</p>
             <div className="mt-7 flex flex-wrap gap-3">
@@ -135,6 +136,9 @@ export default function Page() {
           <TabButton active={tab === 'ask'} onClick={() => setTab('ask')}>
             <MessageCircleQuestion className="w-4 h-4" /> {t.tabAsk}
           </TabButton>
+          <TabButton active={tab === 'write'} onClick={() => setTab('write')}>
+            <PenLine className="w-4 h-4" /> {t.tabWrite}
+          </TabButton>
           <TabButton active={tab === 'timeline'} onClick={() => setTab('timeline')}>
             <Clock className="w-4 h-4" /> {t.tabTimeline}
           </TabButton>
@@ -150,6 +154,11 @@ export default function Page() {
           {tab === 'ask' && (
             <motion.div key="ask" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
               <AskView t={t} lang={lang} llm={llm} status={status} setSnackbar={setSnackbar} />
+            </motion.div>
+          )}
+          {tab === 'write' && (
+            <motion.div key="write" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}>
+              <WriteView t={t} lang={lang} setSnackbar={setSnackbar} onSaved={refreshStatus} />
             </motion.div>
           )}
           {tab === 'timeline' && (
@@ -256,6 +265,19 @@ function AskView({
     }
   }, [answer]);
 
+  // Click a [n] citation chip → scroll the matching source card into view
+  // and pulse it for 2s. Uses DOM id="src-N" set on each article below.
+  const jumpToSource = (n: number) => {
+    const el = document.getElementById(`src-${n}`);
+    if (!el) return;
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    el.classList.remove('citation-flash');
+    // Force reflow so the animation restarts on repeat clicks
+    void (el as HTMLElement).offsetWidth;
+    el.classList.add('citation-flash');
+    window.setTimeout(() => el.classList.remove('citation-flash'), 2100);
+  };
+
   const empty = sources.length === 0 && !streaming && !answer;
   const hasMemories = (status?.count ?? 0) > 0;
 
@@ -327,9 +349,9 @@ function AskView({
             </div>
             <div
               ref={answerRef}
-              className="prose-answer text-ink leading-relaxed whitespace-pre-wrap text-[15px] max-h-[420px] overflow-auto"
+              className="prose-journal text-ink whitespace-pre-wrap max-h-[460px] overflow-auto pr-2"
             >
-              <CitationText text={answer} sources={sources} />
+              <CitationText text={answer} sources={sources} onJump={jumpToSource} />
               {streaming && <span className="inline-block w-1.5 h-4 bg-violet ml-0.5 animate-pulse align-middle" />}
             </div>
           </motion.div>
@@ -347,9 +369,10 @@ function AskView({
               {sources.map((s, i) => (
                 <motion.article
                   key={s.id}
+                  id={`src-${i + 1}`}
                   initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: i * 0.04 }}
-                  className="card p-4 hover:shadow-lift transition-shadow"
+                  className="card p-4 hover:shadow-lift transition-all scroll-mt-24"
                 >
                   <div className="flex items-start gap-3">
                     <div className="font-mono text-xs font-bold text-violet bg-violet/10 rounded-pill px-2 py-0.5 shrink-0">
@@ -831,8 +854,11 @@ function SentimentPill({ sentiment, score, t }: { sentiment: string; score: numb
   </span>;
 }
 
-/** Renders text with [n] citations highlighted as clickable pills. */
-function CitationText({ text, sources }: { text: string; sources: AskSource[] }) {
+/** Renders text with [n] citations rendered as clickable pills that jump
+ *  to the matching source card and pulse it for 2 seconds. */
+function CitationText({
+  text, sources, onJump,
+}: { text: string; sources: AskSource[]; onJump?: (n: number) => void }) {
   if (!text) return null;
   const parts = text.split(/(\[\d+\])/g);
   return (
@@ -842,19 +868,244 @@ function CitationText({ text, sources }: { text: string; sources: AskSource[] })
         if (m) {
           const n = parseInt(m[1], 10);
           const src = sources[n - 1];
+          const tip = src ? `Jump to [${n}] — ${src.title}${src.date ? ` · ${src.date}` : ''}` : undefined;
           return (
-            <span
+            <button
               key={i}
-              title={src ? `${src.title} — ${src.date}` : undefined}
-              className="inline-flex items-center font-mono text-[11px] font-bold text-violet bg-violet/10 rounded-pill px-1.5 py-0.5 mx-0.5 align-baseline"
+              type="button"
+              onClick={() => onJump?.(n)}
+              title={tip}
+              className="inline-flex items-center font-sans text-[11px] font-bold text-violet bg-violet/10 hover:bg-violet hover:text-white active:scale-95 transition-all rounded-pill px-1.5 py-0.5 mx-0.5 align-baseline cursor-pointer"
             >
               {n}
-            </span>
+            </button>
           );
         }
         return <span key={i}>{p}</span>;
       })}
     </>
+  );
+}
+
+/* ─────────────────────────────────────────────────────────── */
+/*  Write View — journal entry + live related-memories sidebar  */
+/* ─────────────────────────────────────────────────────────── */
+type Mood = 'positive' | 'neutral' | 'negative' | '';
+
+function WriteView({
+  t, lang, setSnackbar, onSaved,
+}: { t: any; lang: Lang; setSnackbar: (s: string) => void; onSaved: () => void }) {
+  const [title, setTitle] = useState('');
+  const [body, setBody] = useState('');
+  const [mood, setMood] = useState<Mood>('');
+  const [tagsInput, setTagsInput] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [related, setRelated] = useState<SearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const debounceRef = useRef<number | null>(null);
+  const lastQRef = useRef<string>('');
+
+  const charCount = body.length;
+
+  // Debounced related-memory search — fires ~300ms after typing stops.
+  // Query = title + body concatenated, trimmed, deduped against last.
+  useEffect(() => {
+    const q = `${title} ${body}`.trim();
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    if (q.length < 6) {
+      setRelated([]);
+      lastQRef.current = '';
+      return;
+    }
+    debounceRef.current = window.setTimeout(async () => {
+      if (q === lastQRef.current) return;
+      lastQRef.current = q;
+      setSearching(true);
+      try {
+        // Use the last 400 chars — keeps the signal tight as the entry grows
+        const tailQ = q.length > 400 ? q.slice(-400) : q;
+        const r = await api.search({ query: tailQ, k: 5, mode: 'hybrid' });
+        setRelated(r.results);
+      } catch {
+        /* silently ignore — related is an ambient signal, not critical */
+      } finally {
+        setSearching(false);
+      }
+    }, 300);
+    return () => {
+      if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    };
+  }, [title, body]);
+
+  const save = async () => {
+    if (!title.trim() && !body.trim()) return;
+    setSaving(true);
+    try {
+      const parsedTags = tagsInput
+        .split(/[,，]/)
+        .map(s => s.trim())
+        .filter(Boolean);
+      const r = await api.appendJournal({
+        title: title.trim(),
+        body: body.trim(),
+        mood: mood || undefined,
+        tags: parsedTags,
+      });
+      setSnackbar(`${t.writeSaved} · #${r.collection_total ?? '—'}`);
+      setTitle('');
+      setBody('');
+      setTagsInput('');
+      setMood('');
+      setRelated([]);
+      lastQRef.current = '';
+      onSaved();
+    } catch (e: any) {
+      setSnackbar(String(e));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Cmd/Ctrl+Enter to save — muscle memory for writers
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      e.preventDefault();
+      save();
+    }
+  };
+
+  return (
+    <div className="grid md:grid-cols-[1.6fr_1fr] gap-8">
+      {/* Writing surface */}
+      <div>
+        <div className="card p-7 md:p-9">
+          <div className="flex items-start justify-between gap-4 mb-4">
+            <div>
+              <h2 className="font-serif text-3xl font-bold leading-tight">{t.writeTitle}</h2>
+              <p className="text-sm text-muted mt-1.5 max-w-lg">{t.writeSub}</p>
+            </div>
+            <PenLine className="w-5 h-5 text-violet shrink-0 mt-1" />
+          </div>
+
+          <input
+            value={title}
+            onChange={e => setTitle(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={t.writeTitlePlaceholder}
+            className="w-full bg-transparent border-0 outline-none font-serif text-2xl font-semibold placeholder:text-muted/60 py-2 border-b border-line focus:border-violet/40 transition-colors"
+          />
+
+          <textarea
+            value={body}
+            onChange={e => setBody(e.target.value)}
+            onKeyDown={onKeyDown}
+            placeholder={t.writeBodyPlaceholder}
+            rows={14}
+            className="prose-journal journal-paper mt-5 w-full bg-transparent border-0 outline-none resize-none placeholder:text-muted/70"
+          />
+
+          {/* Meta row: mood + tags + save */}
+          <div className="mt-5 pt-5 border-t border-line flex flex-wrap items-center gap-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs uppercase tracking-wider text-muted">{t.writeMoodLabel}</span>
+              <MoodButton active={mood === 'positive'} onClick={() => setMood(mood === 'positive' ? '' : 'positive')}
+                icon={<Smile className="w-3.5 h-3.5" />} label={t.writeMoodPositive} tone="green" />
+              <MoodButton active={mood === 'neutral'} onClick={() => setMood(mood === 'neutral' ? '' : 'neutral')}
+                icon={<Meh className="w-3.5 h-3.5" />} label={t.writeMoodNeutral} tone="muted" />
+              <MoodButton active={mood === 'negative'} onClick={() => setMood(mood === 'negative' ? '' : 'negative')}
+                icon={<Frown className="w-3.5 h-3.5" />} label={t.writeMoodNegative} tone="amber" />
+            </div>
+
+            <div className="flex items-center gap-2 flex-1 min-w-[180px]">
+              <TagIcon className="w-3.5 h-3.5 text-muted shrink-0" />
+              <input
+                value={tagsInput}
+                onChange={e => setTagsInput(e.target.value)}
+                placeholder={t.writeTagsPlaceholder}
+                className="bg-transparent outline-none text-sm flex-1 placeholder:text-muted/60 border-b border-line/70 focus:border-violet/40 py-1 transition-colors"
+              />
+            </div>
+
+            <div className="flex items-center gap-3 ml-auto">
+              <span className="text-[11px] font-mono text-muted">
+                {charCount} {t.writeCharCount}
+              </span>
+              <button
+                onClick={save}
+                disabled={saving || (!title.trim() && !body.trim())}
+                className="btn-primary disabled:opacity-50"
+                title={lang === 'en' ? 'Ctrl/⌘ + Enter' : 'Ctrl/⌘ + Enter'}
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                {saving ? t.writeSaving : t.writeSave}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Related memories sidebar — live, debounced */}
+      <aside className="md:sticky md:top-24 self-start">
+        <div className="card p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <BookOpen className="w-4 h-4 text-violet" />
+            <h3 className="font-display font-bold">{t.writeRelated}</h3>
+            {searching && <Loader2 className="w-3 h-3 animate-spin text-muted ml-1" />}
+          </div>
+          <p className="text-xs text-muted mb-4">{t.writeRelatedHint}</p>
+
+          {related.length === 0 ? (
+            <div className="text-sm text-muted py-6 text-center leading-relaxed">
+              <Sparkles className="w-5 h-5 mx-auto mb-2 opacity-30" />
+              {t.writeRelatedEmpty}
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              <AnimatePresence>
+                {related.map((r, i) => (
+                  <motion.article
+                    key={r.id}
+                    initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    transition={{ delay: i * 0.03 }}
+                    className="p-3 rounded-xl border border-line hover:border-violet/30 hover:shadow-soft transition-all"
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-0.5">
+                      <h4 className="font-display font-semibold text-sm text-ink truncate">{r.title}</h4>
+                      {r.date && <span className="text-[10px] text-muted font-mono shrink-0">{r.date}</span>}
+                    </div>
+                    <p className="text-xs text-muted line-clamp-2 leading-relaxed">{r.snippet}</p>
+                    <div className="mt-1.5 flex items-center gap-1.5 flex-wrap">
+                      {r.category && <span className="chip !text-[10px] !py-0.5">{r.category}</span>}
+                      <span className="ml-auto font-mono text-[10px] text-violet/80">
+                        {r.score.toFixed(3)}
+                      </span>
+                    </div>
+                  </motion.article>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
+        </div>
+      </aside>
+    </div>
+  );
+}
+
+function MoodButton({
+  active, onClick, icon, label, tone,
+}: { active: boolean; onClick: () => void; icon: React.ReactNode; label: string; tone: 'green' | 'muted' | 'amber' }) {
+  const toneMap = {
+    green:  active ? 'bg-emerald-500 text-white border-emerald-500' : 'border-line text-muted hover:border-emerald-500/40',
+    muted:  active ? 'bg-ink text-white border-ink' : 'border-line text-muted hover:border-ink/30',
+    amber:  active ? 'bg-amber text-ink border-amber' : 'border-line text-muted hover:border-amber/40',
+  } as const;
+  return (
+    <button
+      onClick={onClick}
+      className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-pill text-[11px] font-medium border transition-all ${toneMap[tone]}`}
+    >
+      {icon} {label}
+    </button>
   );
 }
 

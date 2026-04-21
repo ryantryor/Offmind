@@ -138,6 +138,28 @@ export const api = {
       j<{ upserted: number; collection_total: number }>(r),
     ),
 
+  /** Persist a new journal entry and index it live. */
+  appendJournal: (body: {
+    title: string;
+    body: string;
+    mood?: string;
+    tags?: string[];
+    date?: string;
+  }) =>
+    fetch('/api/journal/append', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    }).then((r) =>
+      j<{
+        ok: boolean;
+        path: string;
+        doc: { title: string; date: string; category: string; tags: string[]; snippet: string };
+        upserted: number;
+        collection_total: number;
+      }>(r),
+    ),
+
   snapshot: () =>
     fetch('/api/snapshot', { method: 'POST' }).then((r) => j<{ ok: boolean }>(r)),
 

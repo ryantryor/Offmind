@@ -11,6 +11,7 @@ Endpoints:
     POST /api/upload           — multipart file upload, returns parsed docs (no index)
     POST /api/index            — index a list of docs (sync, simple)
     POST /api/index/stream     — SSE: index docs with per-batch progress
+    POST /api/journal/append   — write a new journal entry to disk + index it
     POST /api/sample/load      — load the bundled sample dataset
     POST /api/snapshot         — VDE snapshot
 """
@@ -19,6 +20,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -295,6 +297,112 @@ async def index_stream(req: IndexRequest):
                 break
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ── Journal append (write-your-own-entry) ──────────────────────
+JOURNAL_DIR = Path(os.environ.get("OFFMIND_JOURNAL_DIR", "/app/data/journal"))
+
+
+class JournalEntry(BaseModel):
+    title: str
+    body: str
+    mood: Optional[str] = None       # positive | neutral | negative (free-form tag)
+    tags: Optional[list[str]] = []
+    date: Optional[str] = None       # ISO "YYYY-MM-DD" — defaults to today
+
+
+_SLUG_RE = re.compile(r"[^a-z0-9\-]+")
+
+
+def _slugify(title: str, max_len: int = 40) -> str:
+    """ASCII-safe slug — collapse whitespace, drop non-[a-z0-9-] chars.
+
+    CJK titles → mostly stripped → falls back to "entry". We prepend a
+    timestamp anyway so collisions are rare.
+    """
+    s = title.strip().lower()
+    s = re.sub(r"\s+", "-", s)
+    s = _SLUG_RE.sub("", s)
+    s = s.strip("-")
+    return (s[:max_len] or "entry")
+
+
+@app.post("/api/journal/append")
+def journal_append(entry: JournalEntry):
+    """Persist a new journal entry as a markdown file and index it live.
+
+    Writes to OFFMIND_JOURNAL_DIR as YAML-frontmatter markdown so the entry
+    survives container restarts and shows up on the next `/api/sample/load`
+    or manual re-index. After writing, we parse + index through the same
+    code path as uploads so the entry is immediately searchable.
+    """
+    title = (entry.title or "").strip()
+    body = (entry.body or "").strip()
+    if not title and not body:
+        raise HTTPException(400, "title or body must be non-empty")
+    if not title:
+        # Use first line of body (up to 60 chars) as the title
+        first = body.splitlines()[0] if body else "Untitled"
+        title = first[:60].strip() or "Untitled"
+
+    # Normalize date — default to today, accept ISO YYYY-MM-DD
+    date_str = (entry.date or "").strip() or str(datetime.now().date())
+
+    # Tags: include mood as a tag if present (so timeline's sentiment
+    # analyzer still wins, but downstream filters can slice by mood)
+    tags = list(entry.tags or [])
+    mood = (entry.mood or "").strip().lower()
+    if mood and mood not in tags:
+        tags.insert(0, mood)
+
+    # Pick a filename: YYYY-MM-DD_HHMMSS_<slug>.md — time-sortable + safe
+    JOURNAL_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y-%m-%d_%H%M%S")
+    slug = _slugify(title)
+    fname = f"{stamp}_{slug}.md"
+    fpath = JOURNAL_DIR / fname
+
+    # Hand-rolled YAML frontmatter — avoids pulling PyYAML just for this
+    def _yaml_list(xs: list[str]) -> str:
+        return "[" + ", ".join(f'"{x}"' for x in xs) + "]"
+
+    frontmatter = (
+        "---\n"
+        f'title: "{title.replace(chr(34), chr(39))}"\n'
+        f"date: {date_str}\n"
+        f"category: journal\n"
+        f"tags: {_yaml_list(tags)}\n"
+        f'mood: "{mood}"\n'
+        "---\n\n"
+    )
+    fpath.write_text(frontmatter + body + "\n", encoding="utf-8")
+
+    # Parse + index through the existing pipeline
+    doc = parsers.parse_path(fpath)
+    if doc is None:
+        raise HTTPException(500, "failed to parse just-written entry")
+    # Force the category to "journal" so these stand out in facets
+    doc["category"] = "journal"
+    # Merge the mood tag that we pushed onto frontmatter (parse_markdown
+    # already picks up tags, but be defensive in case of list drift)
+    doc["tags"] = list({*(doc.get("tags") or []), *tags})
+    doc["date"] = date_str
+
+    result = core.index_documents([doc], recreate=False)
+
+    return {
+        "ok": True,
+        "path": str(fpath.relative_to(JOURNAL_DIR.parent) if fpath.is_relative_to(JOURNAL_DIR.parent) else fpath),
+        "doc": {
+            "title": doc["title"],
+            "date": doc["date"],
+            "category": doc["category"],
+            "tags": doc["tags"],
+            "snippet": (doc["body"] or "")[:240],
+        },
+        "upserted": result.get("upserted", 1),
+        "collection_total": result.get("collection_total"),
+    }
 
 
 # ── Sample dataset loader ──────────────────────────────────────
