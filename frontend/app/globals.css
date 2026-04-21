@@ -1,0 +1,49 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: light;
+  }
+  html, body {
+    background: #FBFAF6;
+    color: #1A1A1F;
+    -webkit-font-smoothing: antialiased;
+  }
+  ::selection { background: #FFF4D6; color: #1A1A1F; }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 font-medium transition-all
+           rounded-pill px-5 py-2.5 text-sm shadow-soft active:scale-[0.98]
+           focus:outline-none focus:ring-4 focus:ring-violet/20;
+  }
+  .btn-primary {
+    @apply btn bg-violet text-white hover:bg-violet2 shadow-lift;
+  }
+  .btn-ghost {
+    @apply btn bg-white text-ink border border-line hover:border-violet/40 hover:text-violet;
+  }
+  .btn-amber {
+    @apply btn bg-amber text-ink hover:brightness-105;
+  }
+  .card {
+    @apply bg-white rounded-xl2 border border-line shadow-soft;
+  }
+  .chip {
+    @apply inline-flex items-center gap-1 px-2.5 py-1 text-xs rounded-pill
+           bg-canvas border border-line text-muted;
+  }
+  .chip-violet { @apply chip bg-violet/10 border-violet/20 text-violet; }
+  .chip-amber  { @apply chip bg-amber/20 border-amber/40 text-amber-dark; }
+}
+
+/* Subtle pattern for the hero — draws the eye without being noisy */
+.hero-bg {
+  background:
+    radial-gradient(circle at 18% 22%, rgba(248,183,57,0.18) 0, transparent 38%),
+    radial-gradient(circle at 82% 18%, rgba(107,79,187,0.14) 0, transparent 42%),
+    #FFF4D6;
+}

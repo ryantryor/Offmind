@@ -1,0 +1,33 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+venv/
+.venv/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Data — runtime DB state and uploads (keep ./data/sample committed)
+data/vectorai/
+data/uploads/
+data/model-cache/
+data/ollama/
+
+# Model weights — 470 MB, fetched by models/_download.py
+models/paraphrase-multilingual-MiniLM-L12-v2/pytorch_model.bin
+models/paraphrase-multilingual-MiniLM-L12-v2/model.safetensors
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Build outputs
+*.log
+*.tar
+*.tar.gz
+.gstack/

@@ -1,0 +1,20 @@
+# Web
+fastapi==0.115.0
+uvicorn[standard]==0.32.0
+python-multipart==0.0.12
+
+# Actian SDK — installed separately from local wheel in Dockerfile (proprietary, not on PyPI)
+# actian-vectorai==0.1.0b2
+
+# Embeddings (multilingual: EN + 中文 + 50 more langs)
+sentence-transformers==3.2.1
+modelscope==1.19.0   # China-friendly model download fallback
+
+# Document parsing
+python-frontmatter==1.1.0
+PyMuPDF==1.24.10           # primary PDF
+pdfminer.six==20240706     # fallback PDF
+python-docx==1.1.2
+
+# Utility
+pydantic==2.9.2

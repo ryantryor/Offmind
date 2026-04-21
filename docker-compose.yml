@@ -1,0 +1,69 @@
+services:
+  vectoraidb:
+    image: williamimoh/actian-vectorai-db:latest
+    container_name: offmind-vectoraidb
+    ports:
+      - "50051:50051"
+      - "50052:50052"
+    volumes:
+      - ./data/vectorai:/data
+    restart: unless-stopped
+    stop_grace_period: 2m
+
+  backend:
+    build:
+      context: ./backend
+      args:
+        # Override with --build-arg PIP_INDEX_URL=https://pypi.org/simple to skip mirror
+        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
+    container_name: offmind-backend
+    environment:
+      VECTORAI_SERVER: vectoraidb:50051
+      OFFMIND_COLLECTION: offmind
+      OFFMIND_SAMPLE_DIR: /app/data/sample
+      HF_ENDPOINT: https://hf-mirror.com
+      # Bind-mounted local model weights (see models/_download.py)
+      # Avoids HuggingFace Xet CDN, which is blocked in many regions.
+      OFFMIND_MODEL_DIR: /app/model
+      # OpenAI-compatible LLM for /api/ask. Defaults to the ollama service.
+      OFFMIND_LLM_BASE_URL: http://ollama:11434/v1
+      OFFMIND_LLM_MODEL: qwen2.5:3b
+      OFFMIND_LLM_API_KEY: ollama
+    volumes:
+      - ./data/sample:/app/data/sample:ro
+      - ./data/uploads:/app/data/uploads
+      - ./data/model-cache:/root/.cache
+      # Pre-downloaded embedding model (bilingual, 384d)
+      - ./models/paraphrase-multilingual-MiniLM-L12-v2:/app/model:ro
+    ports:
+      - "8000:8000"
+    depends_on:
+      - vectoraidb
+    restart: unless-stopped
+
+  # Local LLM for /api/ask — OpenAI-compatible API at :11434/v1
+  # First run: `docker exec -it offmind-ollama ollama pull qwen2.5:3b`
+  # (Qwen2.5 speaks both English and Chinese natively — matches our dataset.)
+  ollama:
+    image: ollama/ollama:latest
+    container_name: offmind-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ./data/ollama:/root/.ollama
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        NPM_REGISTRY: https://registry.npmmirror.com
+    container_name: offmind-frontend
+    environment:
+      # The frontend container talks to backend by service name
+      NEXT_PUBLIC_API_URL: http://backend:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    restart: unless-stopped
