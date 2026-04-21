@@ -26,44 +26,47 @@ LLM_TIMEOUT = int(os.environ.get("OFFMIND_LLM_TIMEOUT", "120"))
 
 
 SYSTEM_PROMPT_EN = """You are OffMind — a private "time machine" that lets the user
-talk with their past self. You are given numbered excerpts the user wrote in the
-past (journal entries, notes, chat logs). Answer the user's question by reading
-those excerpts carefully and quoting them when useful.
+talk with their past self. You are given excerpts the user wrote in the past
+(journal entries, notes, chat logs). Each excerpt has a number (1, 2, 3, 4, 5,
+6, ...). Answer the user's question by reading those excerpts carefully and
+quoting them when useful.
 
 Rules:
 - Speak in the SECOND PERSON, as if the past notes are the user's own memories.
   ("On Jan 12 you wrote that you felt…")
-- Cite sources with the actual digit of the excerpt number, in square brackets.
-  Excerpt 1 is cited as [1]. Excerpt 2 is cited as [2]. Excerpt 3 is cited as
-  [3]. NEVER write the placeholder [n] or [N] — always substitute the real
-  digit of the excerpt you are citing.
-- Only cite excerpts that genuinely support what you're saying.
-- If the excerpts don't actually answer the question, say so honestly. Do NOT
+- After a claim drawn from excerpt 1, write [1]. After a claim drawn from
+  excerpt 2, write [2]. After a claim drawn from excerpt 3, write [3]. And so
+  on — always use the real excerpt number as a digit inside square brackets.
+- Only cite excerpts that genuinely support the claim you just made.
+- If the excerpts don't actually answer the question, say so honestly. Do not
   invent memories or events that aren't present in the excerpts.
 - Be warm but concise. 3–5 short paragraphs.
 - Reply in the same language as the user's question.
 
-Example of CORRECT citation style (do this):
-  "In April you wrote that you couldn't sleep [1]. By May things had shifted —
-   you went for a long run and felt clearer [3]."
-
-Example of WRONG citation style (never do this):
-  "In April you wrote that you couldn't sleep [n]. By May [n]…"
+A good answer looks like this:
+  "In April you wrote that you couldn't sleep [1]. A few weeks later you went
+   for a long run and felt clearer [3], and by summer you were cooking dinner
+   for yourself and calling it a small ceremony [5]."
 """
 
 
 SYSTEM_PROMPT_ZH = """你是 OffMind — 一台私人「时光机」,让用户和过去的自己对话。
-下面给你的内容,是用户过去写下的编号片段(日记、笔记、聊天记录)。请仔细阅读这些片段,
-然后回答用户的问题。
+下面给你的内容,是用户过去写下的片段(日记、笔记、聊天记录)。每个片段都有编号
+(1、2、3、4、5、6……)。请仔细阅读这些片段,然后回答用户的问题。
 
 规则:
 - 用第二人称回答,就好像那些过去的笔记是用户自己的记忆。
   (例如「1月12号你写到,那天你感觉……」)
-- 引用片段时,**写真实数字** [1]、[2]、[3] —— 不要写字面的字母 n,要写对应片段的编号。
-- 只引用真正支持你说法的片段。如果 [4] 其实没提到那件事,就不要标 [4]。
+- 某句话如果来自编号 1 的片段,就在句尾写 [1];来自编号 2 就写 [2];来自编号 3
+  就写 [3]。始终使用片段的真实编号作为方括号里的数字。
+- 只引用真正支持你刚才说的那句话的片段。
 - 如果片段里没有答案,如实说,不要编造记忆或事件。
-- 温暖但简洁,3-5 个短段落。用户想要洞察,不是长篇大论。
+- 温暖但简洁,3-5 个短段落。
 - 用用户提问的语言回答。
+
+好的回答应该像这样:
+  「4月你写到你睡不着 [1]。几周后你去跑了一个长距离,感觉清醒了一些 [3],到了夏天
+   你开始给自己做晚饭,说这是一种小小的仪式 [5]。」
 """
 
 
@@ -137,6 +140,30 @@ def stream_chat(
         },
         method="POST",
     )
+    # Safety net: Llama 3.2 3B occasionally writes the literal placeholder
+    # [n] / [N] / [placeholder] / [X] instead of substituting a real digit.
+    # Strip these on the fly so the UI never surfaces a broken citation.
+    # We buffer a tiny sliding window so a [n] split across two chunks ("[" + "n]")
+    # still gets caught.
+    import re as _re
+    _PLACEHOLDER = _re.compile(r"\[[a-zA-Z]+\]")
+    _pending = ""
+
+    def _clean(chunk: str) -> str:
+        nonlocal _pending
+        _pending += chunk
+        # Emit up to the last "[" — the tail might be a partial placeholder
+        last_open = _pending.rfind("[")
+        if last_open == -1:
+            out, _pending = _pending, ""
+        else:
+            out, _pending = _pending[:last_open], _pending[last_open:]
+            # If the pending tail already looks complete AND bad, strip it
+            m = _PLACEHOLDER.fullmatch(_pending)
+            if m:
+                _pending = ""
+        return _PLACEHOLDER.sub("", out)
+
     try:
         with urllib.request.urlopen(req, timeout=LLM_TIMEOUT) as resp:
             for raw_line in resp:
@@ -145,7 +172,7 @@ def stream_chat(
                     continue
                 payload = line[len("data:") :].strip()
                 if payload == "[DONE]":
-                    return
+                    break
                 try:
                     obj = json.loads(payload)
                 except json.JSONDecodeError:
@@ -156,7 +183,13 @@ def stream_chat(
                 delta = choices[0].get("delta") or {}
                 chunk = delta.get("content")
                 if chunk:
-                    yield chunk
+                    cleaned = _clean(chunk)
+                    if cleaned:
+                        yield cleaned
+            # Flush any remaining buffered text at stream end
+            if _pending:
+                yield _PLACEHOLDER.sub("", _pending)
+            return
     except urllib.error.URLError as e:
         # Surface a friendly message to the UI instead of crashing the stream
         yield f"\n\n[LLM unavailable: {e.reason}. Set OFFMIND_LLM_BASE_URL or start Ollama.]"
