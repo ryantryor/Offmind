@@ -12,6 +12,9 @@ Endpoints:
     POST /api/index            — index a list of docs (sync, simple)
     POST /api/index/stream     — SSE: index docs with per-batch progress
     POST /api/journal/append   — write a new journal entry to disk + index it
+    POST /api/sentiment        — score a piece of text (Write-tab tone preview)
+    GET  /api/on_this_day      — entries from today's month-day in past years
+    POST /api/transcribe       — offline speech-to-text (faster-whisper)
     POST /api/sample/load      — load the bundled sample dataset
     POST /api/snapshot         — VDE snapshot
 """
@@ -134,6 +137,10 @@ class AskRequest(BaseModel):
     date_from: Optional[str] = None
     date_to: Optional[str] = None
     temperature: float = 0.4
+    # Optional prior turns for multi-turn "talking to your past self" mode.
+    # Each entry: {"role": "user" | "assistant", "content": "..."}.
+    # Only the CURRENT question drives retrieval — history is context only.
+    history: Optional[list[dict]] = None
 
 
 @app.post("/api/ask")
@@ -169,7 +176,7 @@ async def ask(req: AskRequest):
 
     def stream_tokens():
         try:
-            messages = llm.build_messages(req.question, contexts)
+            messages = llm.build_messages(req.question, contexts, history=req.history)
             for chunk in llm.stream_chat(messages, temperature=req.temperature):
                 loop.call_soon_threadsafe(queue.put_nowait, ("token", chunk))
             loop.call_soon_threadsafe(queue.put_nowait, ("done", {"ok": True}))
@@ -297,6 +304,149 @@ async def index_stream(req: IndexRequest):
                 break
 
     return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
+# ── Tone preview (cheap sentiment on arbitrary text) ───────────
+class SentimentRequest(BaseModel):
+    text: str
+
+
+@app.post("/api/sentiment")
+def sentiment_endpoint(req: SentimentRequest):
+    """Score a piece of text with the bilingual lexicon.
+
+    Used live by the Write tab to show "this sounds heavier than usual"
+    hints as the user types. No LLM call — pure Python lexicon match,
+    returns in <1ms for journal-sized inputs.
+    """
+    s = sentiment.analyze(req.text or "")
+    return {
+        "label": s.label,
+        "score": s.score,
+        "matched": s.matched,
+    }
+
+
+# ── "On This Day" — entries from today's month-day in past years ───
+@app.get("/api/on_this_day")
+def on_this_day(window: int = 2):
+    """Find journal entries from the same month-day in previous years.
+
+    Query params:
+        window   +/- day tolerance (default 2 → 5-day band around today)
+
+    Returns up to 3 entries, newest-anniversary first. Empty list is
+    fine — the UI treats it as "nothing to show" and hides the card.
+    """
+    today = datetime.now().date()
+    try:
+        items = core.scroll_all(limit=2000)
+    except Exception as e:  # noqa: BLE001
+        return {"today": today.isoformat(), "entries": [], "error": str(e)}
+
+    matches = []
+    for it in items:
+        raw = it.get("date") or ""
+        try:
+            d = datetime.strptime(raw, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if d.year >= today.year:
+            continue  # only past years
+        # Project entry's MM-DD onto this year and measure distance from today
+        try:
+            projected = d.replace(year=today.year)
+        except ValueError:
+            # Feb 29 on non-leap year — skip gracefully
+            continue
+        day_diff = abs((projected - today).days)
+        if day_diff <= window:
+            matches.append({
+                "id": it.get("id"),
+                "title": it.get("title"),
+                "date": raw,
+                "snippet": it.get("snippet"),
+                "category": it.get("category"),
+                "tags": it.get("tags", []),
+                "years_ago": today.year - d.year,
+                "day_diff": day_diff,
+            })
+
+    # Sort: closest day first, then longest-ago year (more poignant)
+    matches.sort(key=lambda m: (m["day_diff"], -m["years_ago"]))
+    return {
+        "today": today.isoformat(),
+        "count": len(matches),
+        "entries": matches[:3],
+    }
+
+
+# ── Voice transcription (faster-whisper, 100% offline) ─────────
+# Powers the mic button in the Write tab. Receives a webm/mp3/wav blob
+# captured via browser MediaRecorder, returns plain text. We lazy-load
+# the Whisper model on first use so the container starts fast; after
+# that it lives in memory as a module global. "tiny" model ~40MB on disk.
+WHISPER_MODEL_SIZE = os.environ.get("OFFMIND_WHISPER_MODEL", "tiny")
+_whisper_model = None  # module-level cache
+
+
+def _get_whisper():
+    """Lazy-init — first call downloads ~40MB (or uses local cache)."""
+    global _whisper_model
+    if _whisper_model is None:
+        try:
+            from faster_whisper import WhisperModel
+        except ImportError as e:
+            raise HTTPException(
+                501,
+                f"faster-whisper not installed. pip install faster-whisper. ({e})",
+            )
+        # int8 on CPU is plenty for journal speech; no GPU needed.
+        _whisper_model = WhisperModel(
+            WHISPER_MODEL_SIZE, device="cpu", compute_type="int8"
+        )
+    return _whisper_model
+
+
+@app.post("/api/transcribe")
+async def transcribe(file: UploadFile = File(...)):
+    """Transcribe an audio blob (webm/ogg/wav/mp3) to text.
+
+    Bilingual (the Whisper `tiny` model handles EN + ZH + dozens more).
+    Fully local — audio never leaves this box.
+    """
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(400, "empty audio")
+    # Write to a temp file — faster-whisper wants a path or numpy array,
+    # and a path is the simplest cross-format option (handles webm/ogg/mp3/wav).
+    import tempfile
+    suffix = ".webm" if (file.content_type or "").endswith("webm") else ""
+    with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+        tmp.write(raw)
+        path = tmp.name
+    try:
+        model = await asyncio.to_thread(_get_whisper)
+        try:
+            segments, info = await asyncio.to_thread(
+                lambda: model.transcribe(path, beam_size=1, vad_filter=True)
+            )
+            text = " ".join(seg.text.strip() for seg in segments).strip()
+            return {
+                "text": text,
+                "language": getattr(info, "language", None),
+                "duration": round(getattr(info, "duration", 0.0), 2),
+            }
+        except ValueError:
+            # faster-whisper raises ValueError("max() arg is an empty sequence")
+            # when the clip is pure silence / below the VAD threshold. Treat
+            # as "no speech detected" instead of surfacing a 500 to the UI.
+            return {"text": "", "language": None, "duration": 0.0}
+    finally:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
 
 
 # ── Journal append (write-your-own-entry) ──────────────────────

@@ -81,8 +81,16 @@ def _detect_lang(text: str) -> str:
 def build_messages(
     question: str,
     contexts: List[Dict[str, Any]],
+    history: Optional[List[Dict[str, str]]] = None,
 ) -> List[Dict[str, str]]:
-    """Build the chat messages with retrieved context inlined."""
+    """Build the chat messages with retrieved context inlined.
+
+    `history` is an optional list of prior turns like
+    `[{"role": "user", "content": "..."}, {"role": "assistant", "content": "..."}]`.
+    It's woven in BEFORE the current user turn so the model can reference
+    earlier answers ("tell me more about that"). Only the CURRENT question
+    gets fresh retrieval — the history carries forward as context only.
+    """
     lang = _detect_lang(question)
     system = SYSTEM_PROMPT_ZH if lang == "zh" else SYSTEM_PROMPT_EN
 
@@ -109,10 +117,20 @@ def build_messages(
         else f"问题: {question}\n\n你过去写的片段:\n\n{context_block}"
     )
 
-    return [
-        {"role": "system", "content": system},
-        {"role": "user", "content": user_msg},
-    ]
+    msgs: List[Dict[str, str]] = [{"role": "system", "content": system}]
+    # Weave in prior turns. Clamp content length so a very long chat history
+    # doesn't blow past the small-model context window.
+    if history:
+        for turn in history[-8:]:  # keep last 4 Q+A pairs max
+            role = turn.get("role")
+            content = (turn.get("content") or "").strip()
+            if role not in ("user", "assistant") or not content:
+                continue
+            if len(content) > 1500:
+                content = content[:1500] + " …"
+            msgs.append({"role": role, "content": content})
+    msgs.append({"role": "user", "content": user_msg})
+    return msgs
 
 
 def stream_chat(

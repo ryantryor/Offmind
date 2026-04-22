@@ -138,6 +138,33 @@ export const api = {
       j<{ upserted: number; collection_total: number }>(r),
     ),
 
+  /** Bilingual-lexicon sentiment for the Write-tab tone preview. */
+  sentimentPreview: (text: string) =>
+    fetch('/api/sentiment', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ text }),
+    }).then((r) => j<{ label: 'positive' | 'neutral' | 'negative'; score: number; matched: number }>(r)),
+
+  /** "On this day" — entries from today's month-day in past years. */
+  onThisDay: (window = 2) =>
+    fetch(`/api/on_this_day?window=${window}`).then((r) =>
+      j<{
+        today: string;
+        count: number;
+        entries: {
+          id: string;
+          title: string;
+          date: string;
+          snippet: string;
+          category: string;
+          tags: string[];
+          years_ago: number;
+          day_diff: number;
+        }[];
+      }>(r),
+    ),
+
   /** Persist a new journal entry and index it live. */
   appendJournal: (body: {
     title: string;
@@ -180,6 +207,15 @@ export const api = {
    *   done    → { ok: true }
    *   error   → { error: "..." }
    */
+  /** Transcribe an audio blob. 100% offline (faster-whisper tiny). */
+  transcribe: async (blob: Blob) => {
+    const fd = new FormData();
+    const fileName = blob.type.includes('webm') ? 'clip.webm' : 'clip.wav';
+    fd.append('file', new File([blob], fileName, { type: blob.type || 'audio/webm' }));
+    const r = await fetch('/api/transcribe', { method: 'POST', body: fd });
+    return j<{ text: string; language: string; duration: number }>(r);
+  },
+
   ask: async (
     body: {
       question: string;
@@ -190,6 +226,7 @@ export const api = {
       date_from?: string;
       date_to?: string;
       temperature?: number;
+      history?: { role: 'user' | 'assistant'; content: string }[];
     },
     handlers: {
       onSources?: (s: AskSource[], inspector: Inspector | null) => void;

@@ -36,6 +36,42 @@ export const STR = {
     writeMoodNeutral: 'Plain',
     writeMoodNegative: 'Heavy',
 
+    // Tone preview (Write tab — fires as you type)
+    tonePositiveLight: 'This sounds light today.',
+    tonePositiveStrong: 'This sounds bright — good day.',
+    toneNeutral: 'Steady tone.',
+    toneNegativeLight: 'This sounds a little heavy.',
+    toneNegativeStrong: 'This sounds heavy — take care of yourself today.',
+
+    // On This Day (Ask tab)
+    onThisDayHeader: 'On this day',
+    onThisDayYearsAgo: 'years ago',
+    onThisDayOneYear: 'one year ago',
+    onThisDayAskAbout: 'Ask about this',
+
+    // Timeline mood-weather chart
+    moodWeatherTitle: 'Mood weather',
+    moodWeatherSub: 'Your emotional temperature, week by week',
+    moodWeatherLoading: 'Drawing your weather…',
+
+    // Ask — export as letter
+    askExportLetter: 'Save as a letter',
+    letterFrom: 'A letter from your past',
+    letterTo: 'to',
+
+    // Ask — conversational follow-up
+    askFollowUpPlaceholder: 'Follow up…',
+    askFollowUp: 'Follow up',
+    askNewConversation: 'Start over',
+
+    // Voice capture (Write tab mic button)
+    voiceStart: 'Record your voice',
+    voiceStop: 'Stop recording',
+    voiceRecording: 'Listening…',
+    voiceTranscribing: 'Transcribing offline…',
+    voiceNoMic: 'Your browser did not allow microphone access.',
+    voiceFailed: 'Transcription failed.',
+
     // Ask view
     askPlaceholder: 'Ask your past self anything…',
     askSubmit: 'Ask',
@@ -145,6 +181,42 @@ export const STR = {
     writeMoodPositive: '好',
     writeMoodNeutral: '平',
     writeMoodNegative: '重',
+
+    // Tone preview
+    tonePositiveLight: '这段读起来有点轻快。',
+    tonePositiveStrong: '这段很亮 — 看起来是好日子。',
+    toneNeutral: '平稳。',
+    toneNegativeLight: '这段有一点重量。',
+    toneNegativeStrong: '这段很沉 — 今天对自己好一点。',
+
+    // On This Day
+    onThisDayHeader: '今日回声',
+    onThisDayYearsAgo: '年前的今天',
+    onThisDayOneYear: '一年前的今天',
+    onThisDayAskAbout: '就这个问一下',
+
+    // Mood weather
+    moodWeatherTitle: '情绪天气',
+    moodWeatherSub: '你的情绪体温,一周一周画出来',
+    moodWeatherLoading: '正在画你的天气…',
+
+    // Ask — export as letter
+    askExportLetter: '保存成一封信',
+    letterFrom: '一封来自过去的信',
+    letterTo: '给',
+
+    // Ask — conversational follow-up
+    askFollowUpPlaceholder: '接着问…',
+    askFollowUp: '继续追问',
+    askNewConversation: '重新开始',
+
+    // Voice capture
+    voiceStart: '用语音记下来',
+    voiceStop: '停止录音',
+    voiceRecording: '正在聆听…',
+    voiceTranscribing: '离线转写中…',
+    voiceNoMic: '浏览器没有获得麦克风权限。',
+    voiceFailed: '语音转写失败。',
 
     // Ask view
     askPlaceholder: '问问过去的自己,任何事…',

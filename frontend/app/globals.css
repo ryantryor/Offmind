@@ -81,3 +81,45 @@
   animation: citation-pulse 2s ease-out;
   border-color: rgba(107,79,187,0.45) !important;
 }
+
+/* ── Print stylesheet — "Save as a letter" on the Ask tab ─────
+ * When the user clicks the Printer button we trigger window.print().
+ * We want ONLY the .letter-page card on the page, typeset like a
+ * letter on cream paper. Everything else disappears cleanly so the
+ * browser's PDF engine can make a proper A4/Letter PDF.
+ */
+@media print {
+  @page {
+    size: A4;
+    margin: 20mm 22mm;
+  }
+  html, body {
+    background: #FFFFFF !important;
+  }
+  /* Hide everything except the letter */
+  body * { visibility: hidden !important; }
+  .letter-page, .letter-page * { visibility: visible !important; }
+  .letter-page {
+    position: absolute !important;
+    left: 0; top: 0;
+    width: 100% !important;
+    max-width: none !important;
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #FFFFFF !important;
+  }
+  /* Letter-style typography for the answer body */
+  .letter-page .prose-journal {
+    font-size: 12pt !important;
+    line-height: 1.8 !important;
+    color: #1A1A1F !important;
+  }
+  /* Neutralize any bg/chip colors for grayscale printers */
+  .letter-page .chip, .letter-page .chip-amber, .letter-page .chip-violet {
+    background: transparent !important;
+    border-color: #CCC !important;
+    color: #555 !important;
+  }
+}

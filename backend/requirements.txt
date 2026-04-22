@@ -18,3 +18,8 @@ python-docx==1.1.2
 
 # Utility
 pydantic==2.9.2
+
+# Offline speech-to-text — powers the mic button in the Write tab.
+# faster-whisper ships a small CPU-friendly Whisper port. The ~40MB "tiny"
+# model is downloaded on first use; no cloud call ever leaves the box.
+faster-whisper==1.0.3

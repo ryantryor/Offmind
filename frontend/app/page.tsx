@@ -6,7 +6,8 @@ import {
   Search, Upload, Sparkles, Database, Cpu, Zap, FileText,
   ArrowRight, Languages, ShieldCheck, Activity, Layers, X, Check, Loader2,
   MessageCircleQuestion, Clock, Smile, Meh, Frown, BookOpen, Send,
-  PenLine, Save, Tag as TagIcon,
+  PenLine, Save, Tag as TagIcon, CalendarHeart, Mail, CloudSun, Printer,
+  Mic, Square,
 } from 'lucide-react';
 import {
   api,
@@ -217,6 +218,8 @@ export default function Page() {
 /* ─────────────────────────────────────────────────────────── */
 /*  Ask View — the headline interaction                         */
 /* ─────────────────────────────────────────────────────────── */
+type AskTurn = { q: string; a: string; sources: AskSource[] };
+
 function AskView({
   t, lang, llm, status, setSnackbar,
 }: { t: any; lang: Lang; llm: LLMHealth | null; status: Status | null; setSnackbar: (s: string) => void; }) {
@@ -225,15 +228,39 @@ function AskView({
   const [sources, setSources] = useState<AskSource[]>([]);
   const [inspector, setInspector] = useState<Inspector | null>(null);
   const [answer, setAnswer] = useState('');
+  const [lastQ, setLastQ] = useState('');
+  // Previous completed Q/A pairs in this conversation.
+  // Used for (a) rendering the transcript above the current in-progress turn
+  // and (b) seeding /api/ask with chat history so follow-ups feel coherent.
+  const [turns, setTurns] = useState<AskTurn[]>([]);
+  const [onThisDay, setOnThisDay] = useState<Awaited<ReturnType<typeof api.onThisDay>>['entries']>([]);
   const abortRef = useRef<AbortController | null>(null);
   const answerRef = useRef<HTMLDivElement>(null);
 
   const examples: string[] = lang === 'en' ? t.askExamples : t.askExamplesZh;
 
+  // "On this day" — pull entries matching today's MM-DD from past years.
+  // Fires once when memories are available.
+  useEffect(() => {
+    if ((status?.count ?? 0) === 0) return;
+    api.onThisDay(7).then(r => setOnThisDay(r.entries)).catch(() => {});
+  }, [status?.count]);
+
   const ask = async (q?: string) => {
     const finalQ = (q ?? question).trim();
     if (!finalQ || streaming) return;
-    setQuestion(finalQ);
+    // Archive the previous completed turn (if any) into the transcript
+    // BEFORE starting the new stream. Also capture its Q/A into `history`
+    // so the backend can feed it to the model as prior-turn context.
+    const nextTurns: AskTurn[] =
+      answer && lastQ ? [...turns, { q: lastQ, a: answer, sources }] : turns;
+    const history = nextTurns.flatMap((t2) => [
+      { role: 'user' as const, content: t2.q },
+      { role: 'assistant' as const, content: t2.a },
+    ]);
+    if (answer && lastQ) setTurns(nextTurns);
+    setQuestion('');
+    setLastQ(finalQ);
     setStreaming(true);
     setAnswer('');
     setSources([]);
@@ -243,7 +270,7 @@ function AskView({
     abortRef.current = ctrl;
     try {
       await api.ask(
-        { question: finalQ, k: 6, mode: 'hybrid' },
+        { question: finalQ, k: 6, mode: 'hybrid', history: history.length ? history : undefined },
         {
           onSources: (s, ins) => { setSources(s); setInspector(ins); },
           onToken: (chunk) => setAnswer(prev => prev + chunk),
@@ -256,6 +283,17 @@ function AskView({
       if (e.name !== 'AbortError') setSnackbar(String(e));
       setStreaming(false);
     }
+  };
+
+  const resetConversation = () => {
+    abortRef.current?.abort();
+    setTurns([]);
+    setAnswer('');
+    setSources([]);
+    setInspector(null);
+    setLastQ('');
+    setQuestion('');
+    setStreaming(false);
   };
 
   // Auto-scroll answer panel as tokens arrive
@@ -278,8 +316,9 @@ function AskView({
     window.setTimeout(() => el.classList.remove('citation-flash'), 2100);
   };
 
-  const empty = sources.length === 0 && !streaming && !answer;
+  const empty = sources.length === 0 && !streaming && !answer && turns.length === 0;
   const hasMemories = (status?.count ?? 0) > 0;
+  const inConversation = turns.length > 0 || !!answer;
 
   return (
     <div className="grid md:grid-cols-[1.6fr_1fr] gap-8">
@@ -292,13 +331,22 @@ function AskView({
             value={question}
             onChange={e => setQuestion(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && !e.shiftKey && ask()}
-            placeholder={t.askPlaceholder}
+            placeholder={inConversation ? t.askFollowUpPlaceholder : t.askPlaceholder}
             className="flex-1 bg-transparent outline-none py-3 px-1 text-base placeholder:text-muted"
             disabled={streaming}
           />
+          {inConversation && !streaming && (
+            <button
+              onClick={resetConversation}
+              className="text-xs text-muted hover:text-violet px-2"
+              title={t.askNewConversation}
+            >
+              {t.askNewConversation}
+            </button>
+          )}
           <button onClick={() => ask()} disabled={streaming || !question.trim()} className="btn-primary disabled:opacity-50">
             {streaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-            {t.askSubmit}
+            {inConversation ? t.askFollowUp : t.askSubmit}
           </button>
         </div>
 
@@ -309,9 +357,9 @@ function AskView({
           </div>
         )}
 
-        {/* Empty state — example questions */}
+        {/* Empty state — On This Day card + example questions */}
         {empty && (
-          <div className="mt-6">
+          <div className="mt-6 space-y-6">
             {!hasMemories ? (
               <div className="card p-8 text-center text-muted">
                 <BookOpen className="w-8 h-8 mx-auto mb-3 opacity-40" />
@@ -321,38 +369,89 @@ function AskView({
               </div>
             ) : (
               <>
-                <div className="text-xs uppercase tracking-wider text-muted mb-3">{t.askEmpty}</div>
-                <div className="grid sm:grid-cols-2 gap-2.5">
-                  {examples.map((q, i) => (
-                    <button
-                      key={i} onClick={() => ask(q)}
-                      className="card p-3 text-left text-sm hover:border-violet/40 hover:shadow-lift transition-all group"
-                    >
-                      <span className="text-muted group-hover:text-ink transition-colors">{q}</span>
-                    </button>
-                  ))}
+                {onThisDay.length > 0 && (
+                  <OnThisDayCard entries={onThisDay} t={t} lang={lang} onAsk={(q) => ask(q)} />
+                )}
+                <div>
+                  <div className="text-xs uppercase tracking-wider text-muted mb-3">{t.askEmpty}</div>
+                  <div className="grid sm:grid-cols-2 gap-2.5">
+                    {examples.map((q, i) => (
+                      <button
+                        key={i} onClick={() => ask(q)}
+                        className="card p-3 text-left text-sm hover:border-violet/40 hover:shadow-lift transition-all group"
+                      >
+                        <span className="text-muted group-hover:text-ink transition-colors">{q}</span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </>
             )}
           </div>
         )}
 
-        {/* Answer (streaming) */}
+        {/* Conversation transcript — past completed turns */}
+        {turns.length > 0 && (
+          <div className="mt-6 space-y-3">
+            {turns.map((turn, i) => (
+              <motion.div
+                key={i}
+                initial={{ opacity: 0, y: 4 }} animate={{ opacity: 1, y: 0 }}
+                className="card p-5 opacity-80"
+              >
+                <div className="text-[11px] font-mono uppercase tracking-wider text-muted mb-1.5">
+                  {lang === 'en' ? 'You asked' : '你问过'}
+                </div>
+                <div className="font-display font-semibold text-ink mb-3">{turn.q}</div>
+                <div className="text-[11px] font-mono uppercase tracking-wider text-violet/80 mb-1.5">
+                  {t.brand}
+                </div>
+                <div className="prose-journal text-ink whitespace-pre-wrap text-sm leading-relaxed line-clamp-6">
+                  <CitationText text={turn.a} sources={turn.sources} onJump={() => {}} />
+                </div>
+              </motion.div>
+            ))}
+          </div>
+        )}
+
+        {/* Answer (streaming or latest completed) */}
         {(streaming || answer) && (
           <motion.div
             initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
-            className="mt-6 card p-6"
+            className="mt-6 card p-6 letter-page"
           >
-            <div className="flex items-center gap-2 mb-3 text-xs uppercase tracking-wider text-violet">
+            <div className="flex items-center gap-2 mb-3 text-xs uppercase tracking-wider text-violet print:hidden">
               <Sparkles className="w-3.5 h-3.5" />
               {streaming && !answer ? t.askThinking : t.brand}
+              {!streaming && answer && (
+                <button
+                  onClick={() => window.print()}
+                  className="ml-auto inline-flex items-center gap-1 text-muted hover:text-violet normal-case tracking-normal text-[11px]"
+                  title={t.askExportLetter}
+                >
+                  <Printer className="w-3 h-3" /> {t.askExportLetter}
+                </button>
+              )}
+            </div>
+            {/* Print-only letterhead — hidden on screen, shown on paper */}
+            <div className="hidden print:block mb-6 pb-4 border-b border-line">
+              <div className="font-serif italic text-muted text-sm">{t.letterFrom}</div>
+              {lastQ && (
+                <div className="font-serif text-lg mt-1 text-ink">
+                  <span className="text-muted italic">{t.letterTo}:</span> {lastQ}
+                </div>
+              )}
             </div>
             <div
               ref={answerRef}
-              className="prose-journal text-ink whitespace-pre-wrap max-h-[460px] overflow-auto pr-2"
+              className="prose-journal text-ink whitespace-pre-wrap max-h-[460px] overflow-auto pr-2 print:max-h-none print:overflow-visible"
             >
               <CitationText text={answer} sources={sources} onJump={jumpToSource} />
-              {streaming && <span className="inline-block w-1.5 h-4 bg-violet ml-0.5 animate-pulse align-middle" />}
+              {streaming && <span className="inline-block w-1.5 h-4 bg-violet ml-0.5 animate-pulse align-middle print:hidden" />}
+            </div>
+            {/* Print-only footer — signature */}
+            <div className="hidden print:block mt-8 pt-4 border-t border-line font-serif italic text-muted text-sm">
+              — {t.brand}
             </div>
           </motion.div>
         )}
@@ -467,6 +566,9 @@ function TimelineView({ t, lang }: { t: any; lang: Lang }) {
             {filtered.length} / {data.entries.length}
           </div>
         </div>
+
+        {/* Mood Weather — weekly sentiment line chart */}
+        <MoodWeatherChart entries={data.entries} t={t} />
 
         {/* Mood filters */}
         <div className="flex flex-wrap gap-2 mb-6">
@@ -902,10 +1004,52 @@ function WriteView({
   const [saving, setSaving] = useState(false);
   const [related, setRelated] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
+  const [tone, setTone] = useState<{ label: 'positive'|'neutral'|'negative'; score: number; matched: number } | null>(null);
+  // Voice capture state — MediaRecorder lives in a ref so React doesn't
+  // retry it on re-render, and transcription state is purely for the UI.
+  const [recording, setRecording] = useState(false);
+  const [transcribing, setTranscribing] = useState(false);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
   const debounceRef = useRef<number | null>(null);
+  const toneDebounceRef = useRef<number | null>(null);
   const lastQRef = useRef<string>('');
 
   const charCount = body.length;
+
+  // Tone preview — live lexicon classification as you type. Zero LLM cost,
+  // pure Python bilingual dictionary on the backend (<1ms). Only shows
+  // once you've written a couple lines — nothing feels judgy on a blank page.
+  useEffect(() => {
+    if (toneDebounceRef.current) window.clearTimeout(toneDebounceRef.current);
+    const txt = `${title} ${body}`.trim();
+    if (txt.length < 20) { setTone(null); return; }
+    toneDebounceRef.current = window.setTimeout(async () => {
+      try {
+        const r = await api.sentimentPreview(txt);
+        setTone(r);
+      } catch { /* silent — tone is ambient */ }
+    }, 500);
+    return () => {
+      if (toneDebounceRef.current) window.clearTimeout(toneDebounceRef.current);
+    };
+  }, [title, body]);
+
+  const tonePhrase = (): string | null => {
+    if (!tone || tone.matched === 0) return null;
+    const s = tone.score;
+    if (s > 0.5) return t.tonePositiveStrong;
+    if (s > 0.15) return t.tonePositiveLight;
+    if (s < -0.5) return t.toneNegativeStrong;
+    if (s < -0.15) return t.toneNegativeLight;
+    return t.toneNeutral;
+  };
+  const toneColor = (): string => {
+    if (!tone) return 'text-muted';
+    if (tone.score > 0.15) return 'text-emerald-600';
+    if (tone.score < -0.15) return 'text-amber-dark';
+    return 'text-muted';
+  };
 
   // Debounced related-memory search — fires ~300ms after typing stops.
   // Query = title + body concatenated, trimmed, deduped against last.
@@ -936,6 +1080,49 @@ function WriteView({
       if (debounceRef.current) window.clearTimeout(debounceRef.current);
     };
   }, [title, body]);
+
+  // Start recording microphone audio. On stop, blob is POSTed to
+  // /api/transcribe which uses faster-whisper locally — no cloud API,
+  // no network egress. Transcript is appended to the current body text.
+  const startRecording = async () => {
+    if (recording || transcribing) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mr = new MediaRecorder(stream);
+      chunksRef.current = [];
+      mr.ondataavailable = (ev) => { if (ev.data.size > 0) chunksRef.current.push(ev.data); };
+      mr.onstop = async () => {
+        // Stop every track so the browser's mic indicator turns off
+        stream.getTracks().forEach(tr => tr.stop());
+        const blob = new Blob(chunksRef.current, { type: mr.mimeType || 'audio/webm' });
+        if (blob.size === 0) { setTranscribing(false); return; }
+        setTranscribing(true);
+        try {
+          const r = await api.transcribe(blob);
+          if (r.text) {
+            // Append to body with a leading space so we don't mash words together
+            setBody(prev => (prev ? prev.trimEnd() + (prev.trim() ? ' ' : '') + r.text : r.text));
+          }
+        } catch (e: any) {
+          setSnackbar(`${t.voiceFailed} ${e?.message ?? ''}`);
+        } finally {
+          setTranscribing(false);
+        }
+      };
+      recorderRef.current = mr;
+      mr.start();
+      setRecording(true);
+    } catch {
+      setSnackbar(t.voiceNoMic);
+    }
+  };
+
+  const stopRecording = () => {
+    const mr = recorderRef.current;
+    if (!mr) return;
+    try { mr.stop(); } catch { /* already stopped */ }
+    setRecording(false);
+  };
 
   const save = async () => {
     if (!title.trim() && !body.trim()) return;
@@ -1004,6 +1191,21 @@ function WriteView({
             className="prose-journal journal-paper mt-5 w-full bg-transparent border-0 outline-none resize-none placeholder:text-muted/70"
           />
 
+          {/* Tone preview — quiet italic hint as you write.
+              Debounced 500ms; only shows when text ≥20 chars and lexicon
+              actually matched something. Zero LLM cost. */}
+          <AnimatePresence>
+            {tonePhrase() && (
+              <motion.div
+                key={tonePhrase()}
+                initial={{ opacity: 0, y: -2 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                className={`mt-2 text-xs font-serif italic ${toneColor()}`}
+              >
+                · {tonePhrase()}
+              </motion.div>
+            )}
+          </AnimatePresence>
+
           {/* Meta row: mood + tags + save */}
           <div className="mt-5 pt-5 border-t border-line flex flex-wrap items-center gap-4">
             <div className="flex items-center gap-2">
@@ -1030,6 +1232,30 @@ function WriteView({
               <span className="text-[11px] font-mono text-muted">
                 {charCount} {t.writeCharCount}
               </span>
+              {/* Mic — fully offline transcription via faster-whisper.
+                  Press to start, press again to stop. Transcript is appended
+                  to the body. The button also pulses red while listening. */}
+              <button
+                onClick={recording ? stopRecording : startRecording}
+                disabled={transcribing || saving}
+                className={`inline-flex items-center gap-1.5 rounded-pill px-3 py-2 text-xs font-medium border transition-all ${
+                  recording
+                    ? 'bg-coral/10 border-coral text-coral animate-pulse'
+                    : transcribing
+                    ? 'bg-canvas border-line text-muted'
+                    : 'bg-canvas border-line text-muted hover:border-violet/40 hover:text-violet'
+                }`}
+                title={recording ? t.voiceStop : t.voiceStart}
+              >
+                {transcribing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> :
+                  recording ? <Square className="w-3.5 h-3.5 fill-current" /> :
+                  <Mic className="w-3.5 h-3.5" />}
+                <span>
+                  {transcribing ? t.voiceTranscribing :
+                   recording ? t.voiceRecording :
+                   t.voiceStart}
+                </span>
+              </button>
               <button
                 onClick={save}
                 disabled={saving || (!title.trim() && !body.trim())}
@@ -1087,6 +1313,181 @@ function WriteView({
           )}
         </div>
       </aside>
+    </div>
+  );
+}
+
+/* ── On This Day card — Ask-tab landing surface ─────────────
+ * Shown on the Ask-tab empty state when memories exist AND entries
+ * from past years match today's MM-DD (±window days). A quiet,
+ * warm-tinted card: one line per echo, click to auto-ask.
+ */
+function OnThisDayCard({
+  entries, t, lang, onAsk,
+}: {
+  entries: { id: string; title: string; date: string; snippet: string; years_ago: number; day_diff: number }[];
+  t: any; lang: Lang; onAsk: (q: string) => void;
+}) {
+  const fmtYearsAgo = (n: number) =>
+    n === 1 ? t.onThisDayOneYear : `${n} ${t.onThisDayYearsAgo}`;
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}
+      className="rounded-xl2 border border-amber/30 bg-amber/10 p-5"
+    >
+      <div className="flex items-center gap-2 mb-3">
+        <CalendarHeart className="w-4 h-4 text-amber-dark" />
+        <h3 className="font-display font-bold text-sm text-ink">{t.onThisDayHeader}</h3>
+      </div>
+      <ul className="space-y-2.5">
+        {entries.map(e => (
+          <li
+            key={e.id}
+            className="group rounded-xl bg-white/60 border border-line/70 p-3 hover:border-amber/40 hover:shadow-soft transition-all"
+          >
+            <div className="flex items-center justify-between gap-3 mb-1">
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="font-mono text-[10px] uppercase tracking-wider text-amber-dark bg-amber/20 rounded-pill px-2 py-0.5 shrink-0">
+                  {fmtYearsAgo(e.years_ago)}
+                </span>
+                <h4 className="font-display font-semibold text-sm text-ink truncate">{e.title}</h4>
+              </div>
+              <span className="text-[10px] font-mono text-muted shrink-0">{e.date}</span>
+            </div>
+            <p className="text-xs text-muted line-clamp-2 leading-relaxed">{e.snippet}</p>
+            <button
+              onClick={() => onAsk(
+                lang === 'en'
+                  ? `Tell me about "${e.title}" — what was going on ${fmtYearsAgo(e.years_ago)}?`
+                  : `跟我讲讲「${e.title}」— ${fmtYearsAgo(e.years_ago)}到底发生了什么?`
+              )}
+              className="mt-2 text-[11px] text-violet hover:underline inline-flex items-center gap-1 opacity-70 group-hover:opacity-100 transition-opacity"
+            >
+              <ArrowRight className="w-3 h-3" /> {t.onThisDayAskAbout}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </motion.div>
+  );
+}
+
+/* ── Mood Weather — weekly sentiment line chart ─────────────
+ * Groups entries by ISO week, averages sentiment_score, plots
+ * an SVG polyline + subtle area fill. Hovering a dot shows the
+ * week summary. Pure SVG — no chart-lib dependency.
+ */
+function MoodWeatherChart({
+  entries, t,
+}: { entries: TimelineEntry[]; t: any }) {
+  const buckets = useMemo(() => {
+    // Group by ISO year-week key
+    const map = new Map<string, { sum: number; n: number; ts: number; label: string }>();
+    for (const e of entries) {
+      if (!e.date) continue;
+      const d = new Date(e.date);
+      if (isNaN(d.getTime())) continue;
+      // Snap to the Monday of that week (local) for stable keys
+      const monday = new Date(d);
+      monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      monday.setHours(0, 0, 0, 0);
+      const key = monday.toISOString().slice(0, 10);
+      const b = map.get(key);
+      if (b) { b.sum += e.sentiment_score; b.n += 1; }
+      else map.set(key, { sum: e.sentiment_score, n: 1, ts: monday.getTime(), label: key });
+    }
+    return Array.from(map.values()).sort((a, b) => a.ts - b.ts);
+  }, [entries]);
+
+  const [hover, setHover] = useState<number | null>(null);
+
+  if (buckets.length < 2) {
+    // Not enough weeks to draw a meaningful line — bail quietly.
+    return null;
+  }
+
+  // Chart geometry
+  const W = 720, H = 140, PAD_X = 12, PAD_Y = 18;
+  const innerW = W - PAD_X * 2;
+  const innerH = H - PAD_Y * 2;
+  const xStep = buckets.length === 1 ? 0 : innerW / (buckets.length - 1);
+  // y=0 is midline (score 0), top is +1 (positive), bottom is -1
+  const yFor = (score: number) => PAD_Y + innerH / 2 - (score * innerH) / 2;
+  const xFor = (i: number) => PAD_X + i * xStep;
+
+  const points = buckets.map((b, i) => {
+    const avg = b.n ? b.sum / b.n : 0;
+    return { x: xFor(i), y: yFor(avg), avg, ...b };
+  });
+
+  const lineD = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaD = `${lineD} L${points[points.length - 1].x.toFixed(1)},${yFor(0).toFixed(1)} L${points[0].x.toFixed(1)},${yFor(0).toFixed(1)} Z`;
+
+  const hovered = hover != null ? points[hover] : null;
+
+  return (
+    <div className="card p-5 mb-6">
+      <div className="flex items-center gap-2 mb-1">
+        <CloudSun className="w-4 h-4 text-violet" />
+        <h3 className="font-display font-bold text-sm">{t.moodWeatherTitle}</h3>
+      </div>
+      <p className="text-xs text-muted mb-3">{t.moodWeatherSub}</p>
+      <div className="relative">
+        <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-[140px] overflow-visible">
+          {/* Midline (score = 0) */}
+          <line
+            x1={PAD_X} x2={W - PAD_X} y1={yFor(0)} y2={yFor(0)}
+            stroke="#E8E5DA" strokeDasharray="4 4" strokeWidth={1}
+          />
+          {/* Area fill */}
+          <path d={areaD} fill="url(#moodGrad)" opacity={0.35} />
+          {/* Line */}
+          <path d={lineD} fill="none" stroke="#6B4FBB" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {/* Dots */}
+          {points.map((p, i) => {
+            const col =
+              p.avg > 0.15 ? '#10b981' :
+              p.avg < -0.15 ? '#F8B739' :
+              '#9A9890';
+            return (
+              <g key={i}>
+                <circle
+                  cx={p.x} cy={p.y} r={hover === i ? 5 : 3.5}
+                  fill={col} stroke="#FBFAF6" strokeWidth={1.5}
+                  onMouseEnter={() => setHover(i)}
+                  onMouseLeave={() => setHover(h => (h === i ? null : h))}
+                  style={{ cursor: 'pointer', transition: 'r 120ms' }}
+                />
+              </g>
+            );
+          })}
+          <defs>
+            <linearGradient id="moodGrad" x1="0" x2="0" y1="0" y2="1">
+              <stop offset="0%" stopColor="#6B4FBB" stopOpacity="0.5" />
+              <stop offset="50%" stopColor="#6B4FBB" stopOpacity="0.05" />
+              <stop offset="100%" stopColor="#F8B739" stopOpacity="0.35" />
+            </linearGradient>
+          </defs>
+        </svg>
+        {/* Tooltip */}
+        {hovered && (
+          <div
+            className="absolute pointer-events-none -translate-x-1/2 -translate-y-full"
+            style={{
+              left: `${(hovered.x / W) * 100}%`,
+              top: `${(hovered.y / H) * 100}%`,
+            }}
+          >
+            <div className="card px-2.5 py-1.5 text-[11px] whitespace-nowrap shadow-lift">
+              <div className="font-mono text-muted">{hovered.label}</div>
+              <div className="font-semibold text-ink">
+                {hovered.avg > 0 ? '+' : ''}{hovered.avg.toFixed(2)}
+                <span className="text-muted font-normal ml-1">· {hovered.n}</span>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
