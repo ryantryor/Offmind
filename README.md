@@ -10,6 +10,17 @@ A private time machine for your mind — drop in your journals, notes, PDFs and 
 
 ![status](https://img.shields.io/badge/status-hackathon-FFB400) ![offline](https://img.shields.io/badge/offline-100%25-6B4FBB) ![actian](https://img.shields.io/badge/built%20on-Actian%20VectorAI%20DB-1A1A1F) ![english-first](https://img.shields.io/badge/English--first-multilingual%20retrieval-F8B739)
 
+---
+
+### ▶ 90-second demo
+
+https://github.com/user-attachments/assets/af7922c2-3645-443e-825b-fd623ce8a613
+
+[![OffMind 90-second demo](docs/assets/demo-thumb.jpg)](https://github.com/user-attachments/assets/af7922c2-3645-443e-825b-fd623ce8a613)
+
+> Storyboard + voiceover script: [`docs/DEMO_SCRIPT.md`](docs/DEMO_SCRIPT.md).
+> Video built deterministically from HTML with [HeyGen HyperFrames](https://github.com/heygen-com/hyperframes) — source at [`video/hyperframes/offmind-demo/`](video/hyperframes/offmind-demo/).
+
 </div>
 
 ---
@@ -24,13 +35,16 @@ Everything runs on your laptop. No cloud. No telemetry. The text, the embeddings
 
 > **Why "multilingual under the hood"?** The narration LLM (Llama 3.2 3B) is English-first. But the retrieval layer uses a 384-d multilingual embedding (`paraphrase-multilingual-MiniLM-L12-v2`, 50+ languages) — so an English question like *"what was I anxious about last spring?"* can surface a Chinese journal entry from 2023 alongside English ones. The LLM then narrates the synthesis in English with `[n]` citations back to the originals. Real bilingual users don't think in one language — neither should their tooling.
 
-### Three things you can do with it
+### Four things you can do with it
 
 | | What | How it feels |
 |---|---|---|
 | **🗣️ Ask** | "What was making me anxious last spring?" | OffMind retrieves the 6 most relevant moments and your local LLM streams back a warm, second-person answer with `[n]` citations you can click. |
 | **⏳ Timeline** | Every memory chronologically, color-coded by mood | Each entry is scored by a bilingual sentiment lexicon (no LLM call) — green dots for good days, amber for rough ones. Filter by mood. |
 | **🔎 Search** | Power-user hybrid search with Inspector panel | Toggle fusion modes (RRF / DBSF / dense-only / sparse-only) and watch exactly what Actian did. |
+| **✍️ Write** | Voice-to-journal, fully offline | faster-whisper transcribes locally; the entry is indexed into Actian the moment you save it. |
+
+**Plus — Morning Reflection.** The first time you open OffMind each day, a soft modal surfaces one entry from exactly this month-day in a past year. Your local LLM streams a 2-sentence reflection in your own second-person voice, and invites you to reflect further in the Ask tab. One ritual a day, entirely offline. It turns the product from "a tool I open when I want something" into "a companion that checks in."
 
 ### Why judges should care
 
@@ -77,18 +91,28 @@ Plus: **multilingual embeddings** (paraphrase-multilingual-MiniLM-L12-v2, 384-d,
 ```bash
 git clone https://github.com/ryantryor/Offmind.git
 cd Offmind
-docker compose up -d --build
+docker compose up -d --build   # runs on x86_64 or arm64 (Apple Silicon / Linux ARM)
 
 # One-time: pull the local LLM used by /api/ask (~2 GB)
 docker exec -it offmind-ollama ollama pull llama3.2:3b
 
+# Verify the stack — one command, all green = shippable
+./scripts/smoke.sh
+
+# Or curl a single summary:
+curl http://localhost:8000/api/ready
+
 # Open http://localhost:3000
-#   → click "Load sample dataset" (30 bilingual journal entries)
+#   → click "Load sample dataset" (30 English journal entries)
 #   → switch to the "Ask" tab
 #   → try: "What was I worried about last spring?"
 ```
 
-The sample dataset is a curated 30-entry personal journal (mix of EN + 中文) spanning two years — break-ups, promotions, trips with mom, 2am code reviews. It's designed to let judges feel the product in 60 seconds.
+> **Inside China?** `cp .env.cn.example .env && docker compose build` swaps the
+> default PyPI / npm registries for the Tsinghua and npmmirror mirrors.
+> The default build targets official registries so overseas judges don't get stuck.
+
+The sample dataset is a curated 30-entry personal journal in English, spanning two years — break-ups, promotions, trips with mom, 2am code reviews. It's designed to let judges feel the product in 60 seconds. The retrieval layer still uses a multilingual embedding (50+ languages), so when you drop in your own non-English notes they index and search seamlessly alongside.
 
 ### First-run: pre-downloaded model weights
 
@@ -106,11 +130,13 @@ After that, `docker compose up -d` boots a fully working backend without any net
 | Method | Path | Purpose |
 |---|---|---|
 | GET  | `/api/status`        | Actian connection + collection count + features used |
+| GET  | `/api/ready`         | **One-shot readiness probe** — Actian + LLM + embedding model all green |
 | GET  | `/api/llm/health`    | Is the local LLM reachable? |
 | GET  | `/api/facets`        | Categories + tags for the filter UI |
 | GET  | `/api/timeline`      | Chronological feed + bilingual sentiment per entry |
 | POST | `/api/search`        | Hybrid search with `{query, k, mode, filters...}` |
 | POST | **`/api/ask`**       | **SSE RAG: retrieval + LLM answer streaming tokens with `[n]` citations** |
+| POST | **`/api/morning`**   | **SSE: Morning Reflection — one past entry + streamed 2-sentence reflection** |
 | POST | `/api/upload`        | Multipart upload → parsed doc dicts (no indexing yet) |
 | POST | `/api/index`         | Sync index a list of docs |
 | POST | `/api/index/stream`  | Index with SSE per-batch progress |
@@ -136,7 +162,7 @@ offmind/
 │   ├── lib/i18n.ts      ← EN / 中文 strings
 │   └── tailwind.config.ts
 ├── data/
-│   ├── sample/          ← 30 bilingual journal entries (.md + frontmatter)
+│   ├── sample/          ← 30 English journal entries (.md + frontmatter)
 │   └── sample-tech/     ← 74 tech blog posts (archive of the old demo set)
 ├── models/              ← Bind-mounted embedding model + _download.py helper
 └── docker-compose.yml   ← 4 services: vectoraidb, backend, frontend, ollama
@@ -154,13 +180,16 @@ offmind/
 
 > **"底层多语言"是什么意思?** 用来生成回答的本地大模型 (Llama 3.2 3B) 是英文 first;但检索层用的是 384 维多语言嵌入(`paraphrase-multilingual-MiniLM-L12-v2`,50+ 语种)。所以一句英文问题 —— *"what was I anxious about last spring?"* —— 可以同时命中 2023 年用中文写的日记和英文日记,大模型再用英文把它们综合在一起,给出 `[n]` 引用回原文。真实的双语用户不会只用一种语言思考,工具也不该。
 
-### 三种玩法
+### 四种玩法
 
 | | 做什么 | 体验 |
 |---|---|---|
 | **🗣️ 问过去的我** | "我去年春天在焦虑什么?" | OffMind 检索最相关的 6 段过去,本地大模型用第二人称流式输出回答,带 `[n]` 引用脚注,点击可跳转到原文。 |
 | **⏳ 时间线** | 所有记忆按时间排列,按情绪着色 | 每段用双语情绪词典打分(不调用大模型) —— 好心情是绿点,难过是琥珀色。可按情绪筛选。 |
 | **🔎 搜索** | 高级用户的混合检索 + 查询透视面板 | 切换融合模式(RRF / DBSF / 仅稠密 / 仅稀疏),清晰看到 Actian 到底做了什么。 |
+| **✍️ 写作** | 语音写日记,完全离线 | faster-whisper 本地转写,保存瞬间就索引进 Actian。 |
+
+**还有 —— 晨间反思。** 每天第一次打开 OffMind 时,会有一张柔和的浮层,翻出去年今天(或相近日子)你写下的一段。本地大模型用第二人称、两句话把它映照回来,并邀你到「问过去的我」里继续。每天一次,全程离线。它让产品从「我需要时才打开」变成「一个会主动打招呼的陪伴」。
 
 ### 用了哪些 Actian 特性
 
@@ -186,7 +215,7 @@ offmind/
 ```bash
 git clone https://github.com/ryantryor/Offmind.git
 cd Offmind
-docker compose up -d --build
+docker compose up -d --build   # 支持 x86_64 / arm64 (Apple Silicon / Linux ARM)
 
 # 首次使用: 拉取本地大模型(/api/ask 使用)
 docker exec -it offmind-ollama ollama pull llama3.2:3b
@@ -197,7 +226,7 @@ docker exec -it offmind-ollama ollama pull llama3.2:3b
 #   → 试试: "我去年春天在焦虑什么?"
 ```
 
-示例数据是 30 篇手工写的中英文混合日记,跨度两年 —— 分手、升职、带妈妈旅行、凌晨改 bug。设计目的是让评委在一分钟内感受到产品。
+示例数据是 30 篇手工写的英文日记,跨度两年 —— 分手、升职、带妈妈旅行、凌晨改 bug。设计目的是让评委在一分钟内感受到产品。检索层仍然是多语言嵌入(50+ 语种),所以当你导入自己的中文笔记时,英文查询一样能命中。
 
 ### 首次运行: 预下载模型权重
 

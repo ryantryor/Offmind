@@ -13,9 +13,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 COPY wheels/ ./wheels/
-# Use Tsinghua mirror for PyPI deps; install Actian SDK from the local wheel
-# (it's proprietary and not published on PyPI).
-ARG PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+# PyPI index. Default is the official registry so overseas builds just work.
+# Inside China, override with --build-arg PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple
+# Actian SDK is installed from the local wheel (proprietary, not on PyPI).
+ARG PIP_INDEX_URL=https://pypi.org/simple
 RUN pip install --upgrade pip \
     && pip install -r requirements.txt -i ${PIP_INDEX_URL} \
     && pip install ./wheels/actian_vectorai-*.whl -i ${PIP_INDEX_URL}

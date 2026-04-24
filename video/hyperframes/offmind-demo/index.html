@@ -1,0 +1,473 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0B0B10;
+        font-family: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+        color: #F3F3F5;
+      }
+
+      /* ── stills: fill the stage, letterboxing handled by object-fit ──────── */
+      .still {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        object-fit: cover;
+        object-position: center;
+      }
+
+      /* ── cut 03: typewriter overlay floating over the streaming PNG ─────── */
+      .typer-overlay {
+        position: absolute;
+        left: 560px;
+        top: 380px;
+        width: 940px;
+        padding: 32px 40px;
+        background: rgba(12, 12, 18, 0.72);
+        border: 1px solid rgba(168, 140, 255, 0.35);
+        border-radius: 16px;
+        backdrop-filter: blur(8px);
+        font-size: 32px;
+        line-height: 1.5;
+        color: #E8E4F5;
+      }
+      .typer-overlay .cite {
+        display: inline-block;
+        min-width: 28px;
+        padding: 0 6px;
+        background: rgba(168, 140, 255, 0.2);
+        color: #C3A7FF;
+        border-radius: 4px;
+        font-size: 24px;
+        font-weight: 600;
+        margin: 0 2px;
+      }
+      .typer-cursor {
+        display: inline-block;
+        width: 12px;
+        height: 34px;
+        background: #C3A7FF;
+        vertical-align: text-bottom;
+        margin-left: 2px;
+      }
+
+      /* ── cut 04: citation hover tooltip ──────────────────────────────────── */
+      .hover-tooltip {
+        position: absolute;
+        left: 1080px;
+        top: 540px;
+        width: 360px;
+        padding: 20px 24px;
+        background: #171722;
+        border: 1px solid #3a2f6b;
+        border-radius: 12px;
+        font-size: 20px;
+        line-height: 1.45;
+        color: #D8D4EA;
+        box-shadow: 0 20px 48px rgba(0,0,0,0.45);
+      }
+      .hover-tooltip .label {
+        display: inline-block;
+        padding: 2px 10px;
+        background: rgba(168, 140, 255, 0.18);
+        color: #C3A7FF;
+        border-radius: 4px;
+        font-size: 14px;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        margin-bottom: 10px;
+      }
+
+      /* ── cut 07: fusion-mode chip floating over search PNGs ──────────────── */
+      .fusion-chip {
+        position: absolute;
+        left: 80px;
+        top: 80px;
+        padding: 18px 36px;
+        background: rgba(168, 140, 255, 0.92);
+        color: #0B0B10;
+        border-radius: 999px;
+        font-weight: 700;
+        font-size: 42px;
+        letter-spacing: 0.04em;
+        box-shadow: 0 20px 60px rgba(168, 140, 255, 0.45);
+      }
+
+      /* ── cut 08: fake terminal for the smoke-test card ───────────────────── */
+      .terminal {
+        position: absolute;
+        left: 260px;
+        top: 160px;
+        width: 1400px;
+        height: 760px;
+        background: #0A0A12;
+        border: 1px solid #2A2A38;
+        border-radius: 20px;
+        box-shadow: 0 40px 120px rgba(0,0,0,0.7);
+        overflow: hidden;
+      }
+      .terminal-bar {
+        height: 48px;
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        gap: 10px;
+        background: #141420;
+        border-bottom: 1px solid #2A2A38;
+      }
+      .terminal-bar .dot {
+        width: 14px; height: 14px; border-radius: 50%;
+      }
+      .terminal-bar .dot.r { background: #FF5F57; }
+      .terminal-bar .dot.y { background: #FEBC2E; }
+      .terminal-bar .dot.g { background: #28C840; }
+      .terminal-bar .title {
+        margin-left: 20px;
+        color: #8B8BA3;
+        font-size: 20px;
+        font-family: "JetBrains Mono", "Consolas", monospace;
+      }
+      .terminal-body {
+        padding: 40px 48px;
+        font-family: "JetBrains Mono", "Consolas", "Courier New", monospace;
+        font-size: 26px;
+        line-height: 1.55;
+        color: #E8E4F5;
+      }
+      .term-line { display: block; }
+      .term-line .prompt { color: #7D6FD9; }
+      .term-line .cmd { color: #F8B739; }
+      .check-line {
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        font-size: 28px;
+        margin-top: 14px;
+        opacity: 0;
+      }
+      .check-line .check {
+        display: inline-flex;
+        width: 32px;
+        height: 32px;
+        border-radius: 50%;
+        background: #28C840;
+        color: #0B0B10;
+        align-items: center;
+        justify-content: center;
+        font-weight: 900;
+        font-size: 22px;
+      }
+      .check-line .label {
+        color: #E8E4F5;
+      }
+      .check-line .tag {
+        margin-left: auto;
+        color: #8B8BA3;
+        font-size: 20px;
+      }
+      .term-final {
+        margin-top: 36px;
+        padding-top: 24px;
+        border-top: 1px dashed #2A2A38;
+        font-size: 32px;
+        color: #28C840;
+        font-weight: 700;
+        opacity: 0;
+      }
+
+      /* ── cut 10: title card ──────────────────────────────────────────────── */
+      .title-card {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        background:
+          radial-gradient(ellipse at 30% 20%, rgba(168, 140, 255, 0.22), transparent 60%),
+          radial-gradient(ellipse at 70% 80%, rgba(248, 183, 57, 0.15), transparent 55%),
+          #0B0B10;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+      }
+      .title-card .brain {
+        font-size: 120px;
+        margin-bottom: 12px;
+        opacity: 0;
+      }
+      .title-card h1 {
+        font-size: 200px;
+        font-weight: 800;
+        letter-spacing: -0.04em;
+        background: linear-gradient(135deg, #F3F3F5 0%, #C3A7FF 100%);
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+        opacity: 0;
+      }
+      .title-card .tag {
+        font-size: 44px;
+        color: #A9A4BF;
+        margin-top: 20px;
+        font-style: italic;
+        opacity: 0;
+      }
+      .title-card .url {
+        font-size: 32px;
+        color: #C3A7FF;
+        margin-top: 56px;
+        font-family: "JetBrains Mono", "Consolas", monospace;
+        letter-spacing: 0.02em;
+        opacity: 0;
+      }
+      .title-card .built {
+        font-size: 24px;
+        color: #6B6880;
+        margin-top: 20px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Total duration 81s. Each still fades in at its cut start and out at its end.
+      Hyperframes' class="clip" runtime manages visibility via data-start/data-duration.
+      GSAP adds the smooth opacity fade and custom overlays.
+    -->
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="81"
+      data-width="1920"
+      data-height="1080"
+    >
+
+      <!-- ═════ CUT 01 — Morning (0 → 8s) ═════════════════════════════════ -->
+      <img id="s01" class="clip still" src="assets/stills/01-morning-modal.png"
+           data-start="0" data-duration="8" data-track-index="1" alt="" />
+
+      <!-- ═════ CUT 02 — Ask empty (8 → 13.5s) ════════════════════════════ -->
+      <img id="s02" class="clip still" src="assets/stills/02-ask-empty.png"
+           data-start="8" data-duration="5.5" data-track-index="1" alt="" />
+
+      <!-- ═════ CUT 03 — Stream (13.5 → 21.5s) ═════════════════════════════
+           First 3s show the early-stream PNG, then cross into complete PNG.
+           Typewriter overlay runs over both. -->
+      <img id="s03a" class="clip still" src="assets/stills/03-ask-streaming-early.png"
+           data-start="13.5" data-duration="3.5" data-track-index="1" alt="" />
+      <img id="s03b" class="clip still" src="assets/stills/04-ask-complete.png"
+           data-start="17" data-duration="4.5" data-track-index="1" alt="" />
+      <div id="typer" class="clip typer-overlay"
+           data-start="14.3" data-duration="7.2" data-track-index="3">
+        <span id="typer-text"></span><span class="typer-cursor"></span>
+      </div>
+
+      <!-- ═════ CUT 04 — Hover citation (21.5 → 26s) ═══════════════════════ -->
+      <img id="s04" class="clip still" src="assets/stills/04-ask-complete.png"
+           data-start="21.5" data-duration="4.5" data-track-index="1" alt="" />
+      <div id="s04-tip" class="clip hover-tooltip"
+           data-start="22.5" data-duration="3.5" data-track-index="3">
+        <span class="label">Source [2]</span>
+        <div>"…woke up at 3am. I kept running the interview back in my head. The rejection email said 'strong candidate, wrong timing' — that one still stings."</div>
+      </div>
+
+      <!-- ═════ CUT 05 — Timeline full (26 → 35.5s) ════════════════════════ -->
+      <img id="s05" class="clip still" src="assets/stills/05-timeline-full.png"
+           data-start="26" data-duration="9.5" data-track-index="1" alt="" />
+
+      <!-- ═════ CUT 06 — Timeline filtered (35.5 → 39.5s) ══════════════════ -->
+      <img id="s06" class="clip still" src="assets/stills/06-timeline-filtered-negative.png"
+           data-start="35.5" data-duration="4" data-track-index="1" alt="" />
+
+      <!-- ═════ CUT 07 — Search fusion carousel (39.5 → 56s) ═══════════════
+           Cycle: empty (2s) → hybrid (4s) → rrf (4s) → dbsf (3.5s) → dense (3s)
+           Fusion-mode chip updates via GSAP. -->
+      <img id="s07a" class="clip still" src="assets/stills/07-search-empty.png"
+           data-start="39.5" data-duration="2" data-track-index="1" alt="" />
+      <img id="s07b" class="clip still" src="assets/stills/08-search-hybrid.png"
+           data-start="41.5" data-duration="4" data-track-index="1" alt="" />
+      <img id="s07c" class="clip still" src="assets/stills/09-search-rrf.png"
+           data-start="45.5" data-duration="4" data-track-index="1" alt="" />
+      <img id="s07d" class="clip still" src="assets/stills/10-search-dbsf.png"
+           data-start="49.5" data-duration="3.5" data-track-index="1" alt="" />
+      <img id="s07e" class="clip still" src="assets/stills/11-search-dense.png"
+           data-start="53" data-duration="3" data-track-index="1" alt="" />
+      <div id="fusion-chip" class="clip fusion-chip"
+           data-start="41.5" data-duration="14.5" data-track-index="3">HYBRID</div>
+
+      <!-- ═════ CUT 08 — Smoke terminal (56 → 64s) ═════════════════════════ -->
+      <div id="s08" class="clip terminal"
+           data-start="56" data-duration="8" data-track-index="1">
+        <div class="terminal-bar">
+          <span class="dot r"></span>
+          <span class="dot y"></span>
+          <span class="dot g"></span>
+          <span class="title">~/Offmind — bash</span>
+        </div>
+        <div class="terminal-body">
+          <div class="term-line">
+            <span class="prompt">$</span> <span class="cmd">./scripts/smoke.sh</span>
+          </div>
+          <div class="check-line" id="chk1">
+            <span class="check">✓</span>
+            <span class="label">Actian VectorAI DB</span>
+            <span class="tag">gRPC :50051 · 30 entries</span>
+          </div>
+          <div class="check-line" id="chk2">
+            <span class="check">✓</span>
+            <span class="label">Local LLM</span>
+            <span class="tag">llama3.2:3b · Ollama</span>
+          </div>
+          <div class="check-line" id="chk3">
+            <span class="check">✓</span>
+            <span class="label">Embedding model</span>
+            <span class="tag">multilingual-MiniLM · 384d</span>
+          </div>
+          <div class="check-line" id="chk4">
+            <span class="check">✓</span>
+            <span class="label">Streaming upsert</span>
+            <span class="tag">SSE per-batch progress</span>
+          </div>
+          <div class="check-line" id="chk5">
+            <span class="check">✓</span>
+            <span class="label">VDE snapshot</span>
+            <span class="tag">durable, on disk</span>
+          </div>
+          <div class="term-final" id="chkfinal">All checks passed · offline · 100%</div>
+        </div>
+      </div>
+
+      <!-- ═════ CUT 09 — Write voice-to-journal (64 → 72.5s) ═══════════════ -->
+      <img id="s09a" class="clip still" src="assets/stills/12-write-empty.png"
+           data-start="64" data-duration="1.5" data-track-index="1" alt="" />
+      <img id="s09b" class="clip still" src="assets/stills/13-write-filled.png"
+           data-start="65.5" data-duration="7" data-track-index="1" alt="" />
+
+      <!-- ═════ CUT 10 — Title card (72.5 → 81s) ═══════════════════════════ -->
+      <div id="s10" class="clip title-card"
+           data-start="72.5" data-duration="8.5" data-track-index="1">
+        <div class="brain" id="t-brain">🧠</div>
+        <h1 id="t-h1">OffMind</h1>
+        <div class="tag" id="t-tag">Talk with your past time.</div>
+        <div class="url" id="t-url">github.com/ryantryor/Offmind</div>
+        <div class="built" id="t-built">Built on Actian VectorAI DB</div>
+      </div>
+
+      <!-- ═════ VO audio track (10 cuts) ═══════════════════════════════════ -->
+      <audio id="vo01" class="clip" src="assets/vo/cut-01-morning.mp3"   data-start="0"    data-duration="6.96" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo02" class="clip" src="assets/vo/cut-02-reflect.mp3"   data-start="8"    data-duration="4.752" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo03" class="clip" src="assets/vo/cut-03-stream.mp3"    data-start="13.5" data-duration="6.336" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo04" class="clip" src="assets/vo/cut-04-hover.mp3"     data-start="21.8" data-duration="3.504" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo05" class="clip" src="assets/vo/cut-05-timeline.mp3"  data-start="26.3" data-duration="8.136" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo06" class="clip" src="assets/vo/cut-06-filter.mp3"    data-start="35.7" data-duration="3.336" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo07" class="clip" src="assets/vo/cut-07-search.mp3"    data-start="40"   data-duration="14.904" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo08" class="clip" src="assets/vo/cut-08-smoke.mp3"     data-start="56.2" data-duration="6.576" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo09" class="clip" src="assets/vo/cut-09-write.mp3"     data-start="64.5" data-duration="7.368" data-track-index="10" data-volume="1"></audio>
+      <audio id="vo10" class="clip" src="assets/vo/cut-10-title.mp3"     data-start="72.8" data-duration="6.48"  data-track-index="10" data-volume="1"></audio>
+    </div>
+
+    <script>
+      // Typewriter content for Cut 03. Split into segments so citation chips
+      // render as styled spans rather than raw [n] text.
+      const TYPER_SEGMENTS = [
+        { kind: "t", text: "In April you wrote about a rejection email " },
+        { kind: "c", text: "[1]" },
+        { kind: "t", text: ". The ache wasn't the 'no' — it was 3 am running the interview back " },
+        { kind: "c", text: "[2]" },
+        { kind: "t", text: ". By June you'd rewritten your résumé and booked a trip with mom " },
+        { kind: "c", text: "[3]" },
+        { kind: "t", text: "." },
+      ];
+
+      function buildTyperTimeline(tl, targetSelector, totalSeconds) {
+        const host = document.querySelector(targetSelector);
+        host.innerHTML = "";
+        // flatten segments into characters with their kind preserved
+        const chars = [];
+        for (const seg of TYPER_SEGMENTS) {
+          if (seg.kind === "t") {
+            for (const ch of seg.text) chars.push({ kind: "t", ch });
+          } else {
+            chars.push({ kind: "c", ch: seg.text }); // whole [n] chip as one unit
+          }
+        }
+        const nodes = chars.map((c) => {
+          if (c.kind === "c") {
+            const span = document.createElement("span");
+            span.className = "cite";
+            span.textContent = c.ch;
+            span.style.opacity = 0;
+            host.appendChild(span);
+            return span;
+          }
+          const span = document.createElement("span");
+          span.textContent = c.ch;
+          span.style.opacity = 0;
+          host.appendChild(span);
+          return span;
+        });
+        const step = totalSeconds / nodes.length;
+        nodes.forEach((n, i) => {
+          tl.to(n, { opacity: 1, duration: 0.001 }, i * step);
+        });
+      }
+
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      // Cut 03 typer (absolute time 14.3s → 21.5s ≈ 7.2s)
+      buildTyperTimeline(tl, "#typer-text", 6.2);
+      // Offset the typer timeline to start at 14.3s
+      tl.set("#typer-text", {}, 14.3);
+
+      // Cut 04 tooltip gentle pop
+      tl.fromTo("#s04-tip", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.45 }, 22.5);
+
+      // Cut 07 fusion-chip label swaps
+      tl.set("#fusion-chip", { opacity: 0 }, 41.3);
+      tl.to("#fusion-chip", { opacity: 1, duration: 0.3 }, 41.5);
+      tl.set("#fusion-chip", { innerText: "HYBRID" }, 41.5);
+      tl.set("#fusion-chip", { innerText: "RRF" }, 45.5);
+      tl.set("#fusion-chip", { innerText: "DBSF" }, 49.5);
+      tl.set("#fusion-chip", { innerText: "DENSE" }, 53);
+      tl.to("#fusion-chip", { opacity: 0, duration: 0.3 }, 55.7);
+
+      // Cut 08 smoke-test check sequence (staggered across ~5s)
+      const checks = ["#chk1", "#chk2", "#chk3", "#chk4", "#chk5"];
+      checks.forEach((id, i) => {
+        tl.fromTo(id,
+          { opacity: 0, x: -20 },
+          { opacity: 1, x: 0, duration: 0.35 },
+          56.6 + i * 0.9
+        );
+      });
+      tl.fromTo("#chkfinal", { opacity: 0 }, { opacity: 1, duration: 0.4 }, 61.6);
+
+      // Cut 10 title-card reveal
+      tl.fromTo("#t-brain", { opacity: 0, scale: 0.7 }, { opacity: 1, scale: 1, duration: 0.6 }, 73.0);
+      tl.fromTo("#t-h1",    { opacity: 0, y: 40 },       { opacity: 1, y: 0, duration: 0.8 }, 73.3);
+      tl.fromTo("#t-tag",   { opacity: 0, y: 20 },       { opacity: 1, y: 0, duration: 0.6 }, 73.9);
+      tl.fromTo("#t-url",   { opacity: 0 },              { opacity: 1, duration: 0.6 }, 75.5);
+      tl.fromTo("#t-built", { opacity: 0 },              { opacity: 1, duration: 0.6 }, 76.3);
+      // hold through to 80.5s, then quick fade so 81s ends on near-black
+      tl.to(["#t-brain", "#t-h1", "#t-tag", "#t-url", "#t-built"],
+        { opacity: 0, duration: 0.5 }, 80.3);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

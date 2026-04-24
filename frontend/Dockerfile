@@ -1,8 +1,9 @@
 FROM node:20-alpine AS deps
 WORKDIR /app
 COPY package.json ./
-# Use Taobao mirror inside China (override at build time)
-ARG NPM_REGISTRY=https://registry.npmmirror.com
+# npm registry. Default is the official one so overseas builds just work.
+# Inside China, override with --build-arg NPM_REGISTRY=https://registry.npmmirror.com
+ARG NPM_REGISTRY=https://registry.npmjs.org
 RUN npm config set registry ${NPM_REGISTRY} && npm install
 
 FROM node:20-alpine AS builder

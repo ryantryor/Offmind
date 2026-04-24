@@ -1,0 +1,33 @@
+# OffMind 90s demo — voice-over segments
+# Voice: en-US-EmmaNeural, rate -5% (slightly slower than default for warmth)
+# Each cut = one MP3 file. Total target ~58–62s of speech inside a 90s video.
+
+[cut-01-morning.mp3]
+Most of what you know about yourself lives in scattered text. OffMind opens with an echo from your past.
+
+[cut-02-reflect.mp3]
+Ask in plain English. Your past self answers in its own words.
+
+[cut-03-stream.mp3]
+Six sources retrieved from Actian. Every claim tagged with a numbered citation you can click.
+
+[cut-04-hover.mp3]
+Click any citation to jump to the original entry.
+
+[cut-05-timeline.mp3]
+Every memory, scored by a bilingual sentiment lexicon. No LLM call. Pure Python. Instant.
+
+[cut-06-filter.mp3]
+Filter by mood. These are the hard days.
+
+[cut-07-search.mp3]
+For power users — every Actian feature is exposed. Named vectors. Filter D S L. R R F and D B S F fusion. A hybrid BM25 reranker for true dense plus sparse retrieval.
+
+[cut-08-smoke.mp3]
+Five checks, one command. Actian, local LLM, embeddings, snapshot — all green, all offline.
+
+[cut-09-write.mp3]
+Write the next page with your voice. Faster-whisper, one hundred percent local. Never leaves your laptop.
+
+[cut-10-title.mp3]
+OffMind. Your private time machine. Open source. One hundred percent offline.

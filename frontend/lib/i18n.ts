@@ -49,6 +49,16 @@ export const STR = {
     onThisDayOneYear: 'one year ago',
     onThisDayAskAbout: 'Ask about this',
 
+    // Morning Reflection (home-screen ritual)
+    morningHeader: 'An echo from your past',
+    morningOneYearAgo: 'One year ago today',
+    morningYearsAgo: 'years ago today',
+    morningReflecting: 'Reflecting…',
+    morningReflectOn: 'Reflect on this',
+    morningSkip: 'Skip to today',
+    morningEmpty: 'A fresh day. Nothing from past years is echoing yet.',
+    morningDismiss: 'Dismiss',
+
     // Timeline mood-weather chart
     moodWeatherTitle: 'Mood weather',
     moodWeatherSub: 'Your emotional temperature, week by week',
@@ -194,6 +204,16 @@ export const STR = {
     onThisDayYearsAgo: '年前的今天',
     onThisDayOneYear: '一年前的今天',
     onThisDayAskAbout: '就这个问一下',
+
+    // Morning Reflection
+    morningHeader: '今日的一段回声',
+    morningOneYearAgo: '一年前的今天',
+    morningYearsAgo: '年前的今天',
+    morningReflecting: '正在映照回来……',
+    morningReflectOn: '就这段再聊聊',
+    morningSkip: '跳过,开始今天',
+    morningEmpty: '崭新的一天。过去的你还没有回声。',
+    morningDismiss: '关掉',
 
     // Mood weather
     moodWeatherTitle: '情绪天气',

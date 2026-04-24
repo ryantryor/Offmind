@@ -588,11 +588,27 @@ def search_with_body(query, **kwargs) -> dict:
 
 # ── Snapshot ───────────────────────────────────────────────────
 def save_snapshot() -> dict:
+    """Durable VDE snapshot via `client.vde.save_snapshot`.
+
+    On server v1.0.0 this endpoint may return 501 UNIMPLEMENTED — the call
+    path is fully wired on our side; we surface a friendly status so the UI
+    doesn't crash, and the code lights up automatically when the server
+    ships the feature.
+    """
+    from actian_vectorai.exceptions import UnimplementedError
     with VectorAIClient(SERVER) as client:
         if not client.collections.exists(COLLECTION):
             return {"ok": False, "error": "collection does not exist"}
-        ok = client.vde.save_snapshot(COLLECTION)
-        return {"ok": bool(ok)}
+        try:
+            ok = client.vde.save_snapshot(COLLECTION)
+            return {"ok": bool(ok)}
+        except UnimplementedError as exc:
+            return {
+                "ok": False,
+                "unimplemented": True,
+                "detail": "VDE save_snapshot not implemented on this server build",
+                "error": str(exc),
+            }
 
 
 def list_categories_and_tags() -> dict:

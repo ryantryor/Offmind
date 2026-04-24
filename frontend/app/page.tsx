@@ -7,12 +7,12 @@ import {
   ArrowRight, Languages, ShieldCheck, Activity, Layers, X, Check, Loader2,
   MessageCircleQuestion, Clock, Smile, Meh, Frown, BookOpen, Send,
   PenLine, Save, Tag as TagIcon, CalendarHeart, Mail, CloudSun, Printer,
-  Mic, Square,
+  Mic, Square, Sunrise,
 } from 'lucide-react';
 import {
   api,
   type SearchResult, type Inspector, type Status, type Facets,
-  type AskSource, type TimelineEntry, type LLMHealth,
+  type AskSource, type TimelineEntry, type LLMHealth, type MorningEcho,
 } from '@/lib/api';
 import { STR, type Lang } from '@/lib/i18n';
 
@@ -31,6 +31,24 @@ export default function Page() {
   const [llm, setLlm] = useState<LLMHealth | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
   const [snackbar, setSnackbar] = useState<string>('');
+
+  // Morning Reflection — home-screen ritual. Auto-opens once per day after
+  // memories exist. Dismissal is stored in localStorage keyed by YYYY-MM-DD.
+  const [morningOpen, setMorningOpen] = useState(false);
+  const morningTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (morningTriggeredRef.current) return;
+    if ((status?.count ?? 0) === 0) return;
+    const key = 'offmind:morning:' + new Date().toISOString().slice(0, 10);
+    if (typeof window !== 'undefined' && window.localStorage.getItem(key)) return;
+    morningTriggeredRef.current = true;
+    setMorningOpen(true);
+  }, [status?.count]);
+  const closeMorning = () => {
+    const key = 'offmind:morning:' + new Date().toISOString().slice(0, 10);
+    if (typeof window !== 'undefined') window.localStorage.setItem(key, '1');
+    setMorningOpen(false);
+  };
 
   const refreshStatus = async () => {
     try {
@@ -198,6 +216,26 @@ export default function Page() {
         )}
       </AnimatePresence>
 
+      {/* ── Morning Reflection (home-screen ritual) ───────── */}
+      <AnimatePresence>
+        {morningOpen && (
+          <MorningReflectionModal
+            t={t} lang={lang}
+            onClose={closeMorning}
+            onReflect={(entry) => {
+              closeMorning();
+              setTab('ask');
+              // Seed the Ask tab with a follow-up about this echo
+              const seed = lang === 'zh'
+                ? `${entry.years_ago} 年前的今天我写到"${entry.title}" — 那段时间发生了什么?`
+                : `${entry.years_ago} ${entry.years_ago === 1 ? 'year' : 'years'} ago today I wrote "${entry.title}" — what was going on in my life then?`;
+              // Dispatch a window event that AskView listens for (see below).
+              window.dispatchEvent(new CustomEvent('offmind:ask', { detail: seed }));
+            }}
+          />
+        )}
+      </AnimatePresence>
+
       {/* ── Snackbar ───────────────────────────────────────── */}
       <AnimatePresence>
         {snackbar && (
@@ -234,6 +272,9 @@ function AskView({
   // and (b) seeding /api/ask with chat history so follow-ups feel coherent.
   const [turns, setTurns] = useState<AskTurn[]>([]);
   const [onThisDay, setOnThisDay] = useState<Awaited<ReturnType<typeof api.onThisDay>>['entries']>([]);
+  // Which source card is expanded to show its full body.
+  // null = all collapsed; a string id = that card is open.
+  const [openSrc, setOpenSrc] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
   const answerRef = useRef<HTMLDivElement>(null);
 
@@ -295,6 +336,19 @@ function AskView({
     setQuestion('');
     setStreaming(false);
   };
+
+  // Listen for external "seed an ask" events, e.g. from the Morning Reflection
+  // modal's "Reflect on this" button. Keeps the parent from having to thread a
+  // ref down into AskView.
+  useEffect(() => {
+    const h = (e: Event) => {
+      const seed = (e as CustomEvent<string>).detail;
+      if (typeof seed === 'string' && seed.trim()) ask(seed);
+    };
+    window.addEventListener('offmind:ask', h as EventListener);
+    return () => window.removeEventListener('offmind:ask', h as EventListener);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Auto-scroll answer panel as tokens arrive
   useEffect(() => {
@@ -465,13 +519,17 @@ function AskView({
               <span className="text-xs text-muted">· {sources.length}</span>
             </div>
             <div className="space-y-2.5">
-              {sources.map((s, i) => (
+              {sources.map((s, i) => {
+                const open = openSrc === s.id;
+                const full = (s as any).body || s.snippet || '';
+                return (
                 <motion.article
                   key={s.id}
                   id={`src-${i + 1}`}
                   initial={{ y: 8, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
                   transition={{ delay: i * 0.04 }}
-                  className="card p-4 hover:shadow-lift transition-all scroll-mt-24"
+                  onClick={() => setOpenSrc(open ? null : s.id)}
+                  className={`card p-4 hover:shadow-lift transition-all scroll-mt-24 cursor-pointer ${open ? 'ring-2 ring-violet/40' : ''}`}
                 >
                   <div className="flex items-start gap-3">
                     <div className="font-mono text-xs font-bold text-violet bg-violet/10 rounded-pill px-2 py-0.5 shrink-0">
@@ -482,18 +540,53 @@ function AskView({
                         <h4 className="font-display font-semibold text-ink truncate">{s.title}</h4>
                         {s.date && <span className="text-xs text-muted shrink-0">{s.date}</span>}
                       </div>
-                      <p className="mt-1 text-sm text-muted line-clamp-3">{s.snippet}</p>
+                      <AnimatePresence initial={false} mode="wait">
+                        {open ? (
+                          <motion.div
+                            key="full"
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: 'auto', opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <div className="mt-2 text-sm text-ink whitespace-pre-wrap leading-relaxed prose-journal">
+                              {full}
+                            </div>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setOpenSrc(null); }}
+                              className="mt-2 text-xs text-violet hover:underline"
+                            >
+                              {lang === 'zh' ? '收起' : 'Collapse'}
+                            </button>
+                          </motion.div>
+                        ) : (
+                          <motion.p
+                            key="snip"
+                            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                            className="mt-1 text-sm text-muted line-clamp-3"
+                          >
+                            {s.snippet}
+                          </motion.p>
+                        )}
+                      </AnimatePresence>
                       <div className="mt-2 flex flex-wrap items-center gap-1.5">
                         {s.category && <span className="chip-amber">{s.category}</span>}
                         {(s.tags || []).slice(0, 4).map(tag => (
                           <span key={tag} className="chip">#{tag}</span>
                         ))}
+                        {!open && (
+                          <span className="text-[11px] text-violet/70">
+                            {lang === 'zh' ? '· 点击展开全文' : '· click to expand'}
+                          </span>
+                        )}
                         <span className="ml-auto font-mono text-[11px] text-muted">{s.score.toFixed(3)}</span>
                       </div>
                     </div>
                   </div>
                 </motion.article>
-              ))}
+                );
+              })}
             </div>
           </div>
         )}
@@ -1368,6 +1461,138 @@ function OnThisDayCard({
           </li>
         ))}
       </ul>
+    </motion.div>
+  );
+}
+
+/* ── Morning Reflection modal — first-screen ritual ─────────
+ * Streams /api/morning on mount. Shows the selected past entry as
+ * a quote card, then streams the 2–4 sentence reflection beneath it.
+ * Two actions:
+ *   "Reflect on this" → close + seed Ask tab with a follow-up question
+ *   "Skip to today"   → close + remember dismissal for the day
+ */
+function MorningReflectionModal({
+  t, lang, onClose, onReflect,
+}: {
+  t: any;
+  lang: Lang;
+  onClose: () => void;
+  onReflect: (entry: MorningEcho) => void;
+}) {
+  const [echo, setEcho] = useState<MorningEcho | null>(null);
+  const [text, setText] = useState('');
+  const [streaming, setStreaming] = useState(true);
+  const [done, setDone] = useState(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  useEffect(() => {
+    const ctrl = new AbortController();
+    abortRef.current = ctrl;
+    api.morning(
+      {
+        onEcho: (e) => setEcho(e),
+        onToken: (chunk) => setText(prev => prev + chunk),
+        onDone: () => { setStreaming(false); setDone(true); },
+        onError: () => { setStreaming(false); setDone(true); },
+      },
+      ctrl.signal,
+    ).catch(() => {});
+    return () => ctrl.abort();
+  }, []);
+
+  const fmtYearsAgo = (n: number) =>
+    n === 1 ? t.morningOneYearAgo : `${n} ${t.morningYearsAgo}`;
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-ink/30 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <motion.div
+        initial={{ scale: 0.96, y: 12, opacity: 0 }}
+        animate={{ scale: 1, y: 0, opacity: 1 }}
+        exit={{ scale: 0.96, y: 12, opacity: 0 }}
+        transition={{ type: 'spring', stiffness: 260, damping: 24 }}
+        onClick={(e) => e.stopPropagation()}
+        className="card w-full max-w-xl overflow-hidden"
+      >
+        <div className="px-6 pt-6 pb-4 bg-gradient-to-b from-amber/10 to-transparent border-b border-line/60 flex items-center gap-2.5">
+          <Sunrise className="w-5 h-5 text-amber-dark" />
+          <div className="font-display font-bold text-ink">{t.morningHeader}</div>
+          <button
+            onClick={onClose}
+            className="ml-auto text-muted hover:text-ink p-1 -mr-1"
+            aria-label={t.morningDismiss}
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          {echo === null && !done && (
+            <div className="flex items-center gap-2 text-sm text-muted py-8 justify-center">
+              <Loader2 className="w-4 h-4 animate-spin" />
+              <span>{t.morningReflecting}</span>
+            </div>
+          )}
+
+          {echo === null && done && (
+            <div className="text-sm text-muted py-4 text-center">{t.morningEmpty}</div>
+          )}
+
+          {echo && (
+            <>
+              <div className="rounded-xl bg-amber/10 border border-amber/25 p-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-mono text-[10px] uppercase tracking-wider text-amber-dark bg-amber/20 rounded-pill px-2 py-0.5">
+                    {fmtYearsAgo(echo.years_ago)}
+                  </span>
+                  <span className="font-mono text-[10px] text-muted">{echo.date}</span>
+                </div>
+                <div className="font-display font-semibold text-ink mb-1.5 text-[15px]">{echo.title}</div>
+                <p className="text-sm text-muted leading-relaxed line-clamp-4 whitespace-pre-wrap">
+                  {echo.body || echo.snippet}
+                </p>
+              </div>
+
+              <div
+                className="text-[15px] leading-relaxed text-ink whitespace-pre-wrap min-h-[3rem]"
+                aria-live="polite"
+              >
+                {text}
+                {streaming && (
+                  <motion.span
+                    animate={{ opacity: [0.2, 1, 0.2] }}
+                    transition={{ duration: 1.2, repeat: Infinity }}
+                    className="inline-block w-1.5 h-4 align-middle bg-violet/60 ml-0.5 rounded-sm"
+                  />
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="px-6 py-4 border-t border-line/60 bg-white/60 flex items-center gap-3 justify-end">
+          <button
+            onClick={onClose}
+            className="text-sm text-muted hover:text-ink px-3 py-1.5"
+          >
+            {t.morningSkip}
+          </button>
+          {echo && (
+            <button
+              onClick={() => onReflect(echo)}
+              disabled={streaming}
+              className="inline-flex items-center gap-1.5 text-sm font-semibold rounded-pill px-4 py-2 bg-violet text-white hover:bg-violet/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            >
+              <MessageCircleQuestion className="w-4 h-4" />
+              {t.morningReflectOn}
+            </button>
+          )}
+        </div>
+      </motion.div>
     </motion.div>
   );
 }

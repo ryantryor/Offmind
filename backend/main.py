@@ -15,6 +15,7 @@ Endpoints:
     POST /api/sentiment        — score a piece of text (Write-tab tone preview)
     GET  /api/on_this_day      — entries from today's month-day in past years
     POST /api/transcribe       — offline speech-to-text (faster-whisper)
+    POST /api/morning          — SSE streaming Morning Reflection (home-screen ritual)
     POST /api/sample/load      — load the bundled sample dataset
     POST /api/snapshot         — VDE snapshot
 """
@@ -93,6 +94,63 @@ def status():
 @app.get("/api/llm/health")
 def llm_health():
     return llm.llm_health()
+
+
+@app.get("/api/ready")
+def ready():
+    """One-shot readiness probe for judges.
+
+    Returns a single JSON with every dependency's status so judges can
+    `curl localhost:8000/api/ready` after `docker compose up` and see
+    whether the stack is fully wired.
+    """
+    checks: dict[str, dict] = {}
+
+    try:
+        st = core.collection_status()
+        checks["actian"] = {
+            "ok": bool(st.get("connected")),
+            "server": st.get("server"),
+            "version": st.get("version"),
+            "collection": st.get("collection"),
+            "entries": st.get("count", 0),
+            "exists": st.get("exists", False),
+        }
+    except Exception as exc:
+        checks["actian"] = {"ok": False, "error": str(exc)}
+
+    try:
+        lh = llm.llm_health()
+        checks["llm"] = {
+            "ok": bool(lh.get("available")),
+            "base_url": lh.get("base_url"),
+            "models": lh.get("models", []),
+        }
+    except Exception as exc:
+        checks["llm"] = {"ok": False, "error": str(exc)}
+
+    try:
+        core.get_model()  # singleton; first call warms the model
+        checks["embedding"] = {"ok": True, "model": core.MODEL_NAME, "dim": core.DIM}
+    except Exception as exc:
+        checks["embedding"] = {"ok": False, "error": str(exc)}
+
+    all_ok = all(v.get("ok") for v in checks.values())
+    return {
+        "ok": all_ok,
+        "service": "offmind-api",
+        "version": app.version,
+        "checks": checks,
+        "features": [
+            "Named Vectors (title+body)",
+            "Filter DSL",
+            "RRF + DBSF Fusion",
+            "VDE Snapshot",
+            "Streaming Upsert (SSE)",
+            "FLAT Index (exact search)",
+            "BM25 Client-side Hybrid",
+        ],
+    }
 
 
 @app.get("/api/facets")
@@ -381,6 +439,155 @@ def on_this_day(window: int = 2):
     }
 
 
+# ── Morning Reflection — first-screen ritual ───────────────────
+MORNING_SYSTEM_EN = """You are OffMind — a private time machine for the user's
+own past. It is morning. You are given ONE excerpt the user wrote on or near
+this same month-day in a previous year. Your job: in 2–4 warm sentences,
+reflect it back to them as a companion would.
+
+Rules:
+- Speak in the second person ("A year ago today, you were…").
+- Lead with what was true for them then (emotion, situation), in one sentence.
+- Then one sentence that gently notices what's changed or stayed the same,
+  without making it up — if you don't know what's true now, ask a soft question
+  instead of asserting.
+- End with ONE small invitation for today: a short question they could journal
+  on. Not a command, not a platitude.
+- Reply in the language of the excerpt.
+- Never use [n] citations here — this is ambient, not a search result.
+- No greetings like "Good morning." No headers. Just the reflection."""
+
+MORNING_SYSTEM_ZH = """你是 OffMind —— 用户自己过往的私人时光机。现在是早晨,
+下面给你一段用户在往年的同一天(或相近日子)写下的片段。请用 2–4 句温暖的话,
+像一位朋友一样把它映照回给他 / 她。
+
+规则:
+- 用第二人称。("一年前的今天,你……")
+- 第一句话点出那时候真实存在的情绪或处境。
+- 第二句话温和地指出什么变了、什么没变 —— 不要编造现在的情况,如果不知道,
+  就改成一个温柔的问句,而不是断言。
+- 最后用一个小小的邀请结尾:今天可以写一写的某个短问题。不要命令式、不要空话。
+- 用片段所用的语言回答。
+- 这里不用 [n] 引用 —— 这是陪伴,不是搜索结果。
+- 不要写「早上好」之类的问候语,不要标题。只写反思本身。"""
+
+
+def _pick_morning_echo() -> Optional[dict]:
+    """Return the single best past entry for today's reflection, or None.
+
+    Priority:
+      1. An On-This-Day match (same month-day, previous year) — closest day
+         first, then the longest-ago year for poignancy.
+      2. If nothing in that window, return None — the UI falls back to
+         "a fresh day, nothing echoing yet".
+    """
+    today = datetime.now().date()
+    try:
+        items = core.scroll_all(limit=2000)
+    except Exception:
+        return None
+
+    candidates = []
+    for it in items:
+        raw = it.get("date") or ""
+        try:
+            d = datetime.strptime(raw, "%Y-%m-%d").date()
+        except (ValueError, TypeError):
+            continue
+        if d.year >= today.year:
+            continue
+        try:
+            projected = d.replace(year=today.year)
+        except ValueError:
+            continue
+        day_diff = abs((projected - today).days)
+        if day_diff <= 7:  # 2-week band for reflections
+            candidates.append((day_diff, today.year - d.year, it, raw))
+
+    if not candidates:
+        return None
+    candidates.sort(key=lambda t: (t[0], -t[1]))
+    _, years_ago, it, raw = candidates[0]
+    return {
+        "id": it.get("id"),
+        "title": it.get("title"),
+        "date": raw,
+        "snippet": it.get("snippet"),
+        "body": it.get("body") or it.get("snippet") or "",
+        "category": it.get("category"),
+        "tags": it.get("tags", []),
+        "years_ago": years_ago,
+    }
+
+
+@app.post("/api/morning")
+async def morning():
+    """Morning Reflection — ambient SSE ritual for the home screen.
+
+    Picks one past entry (On-This-Day window) and streams a short, warm
+    second-person reflection. The first SSE event is the chosen entry so
+    the UI can render the quote card immediately; tokens follow.
+
+    Stream format (mirrors /api/ask):
+      event: echo    data: {"entry": {...} | null}
+      event: token   data: "<text chunk>"
+      event: done    data: {"ok": true}
+      event: error   data: {"error": "..."}
+    """
+    echo = await asyncio.to_thread(_pick_morning_echo)
+
+    queue: asyncio.Queue = asyncio.Queue()
+    loop = asyncio.get_event_loop()
+
+    def stream_tokens():
+        if echo is None:
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", {"ok": True}))
+            return
+        try:
+            lang = llm._detect_lang(echo.get("body") or echo.get("snippet") or "")
+            system = MORNING_SYSTEM_ZH if lang == "zh" else MORNING_SYSTEM_EN
+            years_ago = echo.get("years_ago", 1)
+            when = (
+                f"{years_ago} 年前的今天" if lang == "zh"
+                else (f"One year ago today" if years_ago == 1 else f"{years_ago} years ago today")
+            )
+            body = (echo.get("body") or echo.get("snippet") or "").strip()
+            if len(body) > 1500:
+                body = body[:1500] + " …"
+            user_block = (
+                f"{when}, you wrote ({echo.get('date')}):\n\n{body}"
+                if lang == "en"
+                else f"{when}({echo.get('date')})你写到:\n\n{body}"
+            )
+            messages = [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user_block},
+            ]
+            for chunk in llm.stream_chat(messages, temperature=0.6):
+                loop.call_soon_threadsafe(queue.put_nowait, ("token", chunk))
+            loop.call_soon_threadsafe(queue.put_nowait, ("done", {"ok": True}))
+        except Exception as e:  # noqa: BLE001
+            loop.call_soon_threadsafe(queue.put_nowait, ("error", {"error": str(e)}))
+
+    asyncio.create_task(asyncio.to_thread(stream_tokens))
+
+    async def event_stream():
+        yield f"event: echo\ndata: {json.dumps({'entry': echo}, ensure_ascii=False)}\n\n"
+        if echo is None:
+            yield f"event: done\ndata: {json.dumps({'ok': True})}\n\n"
+            return
+        while True:
+            kind, payload = await queue.get()
+            if kind == "token":
+                yield f"event: token\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
+            else:
+                data = payload if isinstance(payload, str) else json.dumps(payload, ensure_ascii=False)
+                yield f"event: {kind}\ndata: {data}\n\n"
+                break
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
+
+
 # ── Voice transcription (faster-whisper, 100% offline) ─────────
 # Powers the mic button in the Write tab. Receives a webm/mp3/wav blob
 # captured via browser MediaRecorder, returns plain text. We lazy-load
@@ -561,7 +768,7 @@ SAMPLE_DIR = Path(os.environ.get("OFFMIND_SAMPLE_DIR", "/app/data/sample"))
 
 @app.post("/api/sample/load")
 def sample_load(recreate: bool = True):
-    """Index the bundled 74-note sample dataset for the demo mode."""
+    """Index the bundled 30-entry journal sample dataset for the demo mode."""
     if not SAMPLE_DIR.exists():
         raise HTTPException(404, f"sample dir not found at {SAMPLE_DIR}")
     paths = sorted(SAMPLE_DIR.glob("**/*.md"))

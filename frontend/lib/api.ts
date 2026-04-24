@@ -29,6 +29,17 @@ export type SearchResponse = { results: SearchResult[]; inspector: Inspector };
 
 export type AskSource = SearchResult & { body?: string };
 
+export type MorningEcho = {
+  id: string;
+  title: string;
+  date: string;
+  snippet: string;
+  body: string;
+  category: string;
+  tags: string[];
+  years_ago: number;
+};
+
 export type TimelineEntry = {
   id: string;
   title: string;
@@ -189,6 +200,66 @@ export const api = {
 
   snapshot: () =>
     fetch('/api/snapshot', { method: 'POST' }).then((r) => j<{ ok: boolean }>(r)),
+
+  /**
+   * Morning Reflection — SSE home-screen ritual.
+   * The first event is `echo` with the chosen past entry (or null if none).
+   * Then tokens stream the warm 2–4 sentence reflection, followed by `done`.
+   */
+  morning: async (
+    handlers: {
+      onEcho?: (entry: MorningEcho | null) => void;
+      onToken?: (chunk: string) => void;
+      onDone?: () => void;
+      onError?: (msg: string) => void;
+    },
+    signal?: AbortSignal,
+  ) => {
+    const r = await fetch('/api/morning', { method: 'POST', signal });
+    if (!r.ok) {
+      const txt = await r.text().catch(() => r.statusText);
+      handlers.onError?.(`${r.status} ${txt}`);
+      return;
+    }
+    if (!r.body) {
+      handlers.onError?.('no stream');
+      return;
+    }
+    const reader = r.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += decoder.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n\n')) >= 0) {
+        const frame = buf.slice(0, idx);
+        buf = buf.slice(idx + 2);
+        let event = 'message';
+        let data = '';
+        for (const line of frame.split('\n')) {
+          if (line.startsWith('event:')) event = line.slice(6).trim();
+          else if (line.startsWith('data:')) data += line.slice(5).trim();
+        }
+        try {
+          if (event === 'echo') {
+            const obj = JSON.parse(data);
+            handlers.onEcho?.(obj.entry ?? null);
+          } else if (event === 'token') {
+            handlers.onToken?.(JSON.parse(data));
+          } else if (event === 'done') {
+            handlers.onDone?.();
+          } else if (event === 'error') {
+            const obj = JSON.parse(data);
+            handlers.onError?.(obj.error || 'unknown error');
+          }
+        } catch {
+          // tolerate malformed frames
+        }
+      }
+    }
+  },
 
   llmHealth: () => fetch('/api/llm/health').then((r) => j<LLMHealth>(r)),
 

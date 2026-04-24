@@ -14,8 +14,10 @@ services:
     build:
       context: ./backend
       args:
-        # Override with --build-arg PIP_INDEX_URL=https://pypi.org/simple to skip mirror
-        PIP_INDEX_URL: https://pypi.tuna.tsinghua.edu.cn/simple
+        # Official PyPI by default (works abroad). Inside China, override with
+        # PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple in an .env file
+        # or via `docker compose build --build-arg PIP_INDEX_URL=...`.
+        PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.org/simple}
     container_name: offmind-backend
     environment:
       VECTORAI_SERVER: vectoraidb:50051
@@ -61,7 +63,9 @@ services:
     build:
       context: ./frontend
       args:
-        NPM_REGISTRY: https://registry.npmmirror.com
+        # Official npm registry by default. Inside China, override with
+        # NPM_REGISTRY=https://registry.npmmirror.com in an .env file.
+        NPM_REGISTRY: ${NPM_REGISTRY:-https://registry.npmjs.org}
         # Baked into .next at build time — next.config.js's rewrite destination
         # is evaluated during `next build`, not at runtime.
         NEXT_PUBLIC_API_URL: http://backend:8000
